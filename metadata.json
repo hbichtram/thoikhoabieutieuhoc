@@ -1,0 +1,6 @@
+{
+  "name": "TKB SMART",
+  "description": "Trợ lý thiết kế thời khóa biểu trường tiểu học - Quản lý giáo viên, lớp, môn học, phân công và xếp thời khóa biểu",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
