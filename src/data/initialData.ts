@@ -7,10 +7,13 @@ export const initialTeachers: Teacher[] = [
     name: 'Cô Trâm',
     type: 'subject',
     mainSubjectId: 's3', // Tin học
+    homeroomClassId: '',
+    maxWeeklyPeriods: 23,
+    maxSessionsPerWeek: 6,
     maxPeriodsPerDay: 4,
     notes: 'Phụ trách môn Tin học toàn trường',
     unavailableSlots: [
-      { day: 'T6', shift: 'afternoon', periodNumber: 5 }, // Khóa thứ 6 tiết 5 chiều
+      { day: 'T6', shift: 'afternoon', periodNumber: 5, reason: 'Khóa thứ 6 tiết 5 chiều' },
     ],
   },
   {
@@ -19,6 +22,9 @@ export const initialTeachers: Teacher[] = [
     name: 'Cô Lan',
     type: 'homeroom',
     mainSubjectId: 's2', // Tiếng Việt
+    homeroomClassId: 'c1',
+    maxWeeklyPeriods: 20,
+    maxSessionsPerWeek: 6,
     maxPeriodsPerDay: 4,
     notes: 'GVCN Lớp 3A',
     unavailableSlots: [],
@@ -29,6 +35,9 @@ export const initialTeachers: Teacher[] = [
     name: 'Thầy Minh',
     type: 'subject',
     mainSubjectId: 's1', // Toán
+    homeroomClassId: '',
+    maxWeeklyPeriods: 23,
+    maxSessionsPerWeek: 6,
     maxPeriodsPerDay: 4,
     notes: 'Tổ trưởng chuyên môn khối 4-5',
     unavailableSlots: [],
@@ -39,10 +48,13 @@ export const initialTeachers: Teacher[] = [
     name: 'Cô Hoa',
     type: 'subject',
     mainSubjectId: 's4', // Tiếng Anh
+    homeroomClassId: '',
+    maxWeeklyPeriods: 23,
+    maxSessionsPerWeek: 6,
     maxPeriodsPerDay: 4,
     notes: 'Giáo viên Tiếng Anh',
     unavailableSlots: [
-      { day: 'T2', shift: 'morning', periodNumber: 1 }, // Tiết chào cờ T2
+      { day: 'T2', shift: 'morning', periodNumber: 1, reason: 'Tiết chào cờ T2' },
     ],
   },
   {
@@ -51,6 +63,9 @@ export const initialTeachers: Teacher[] = [
     name: 'Thầy Nam',
     type: 'homeroom',
     mainSubjectId: 's6', // TNXH / Khoa học
+    homeroomClassId: 'c2',
+    maxWeeklyPeriods: 20,
+    maxSessionsPerWeek: 6,
     maxPeriodsPerDay: 4,
     notes: 'GVCN Lớp 4B',
     unavailableSlots: [],
@@ -61,6 +76,9 @@ export const initialTeachers: Teacher[] = [
     name: 'Cô Thu',
     type: 'homeroom',
     mainSubjectId: 's8', // Lịch sử & Địa lý
+    homeroomClassId: 'c3',
+    maxWeeklyPeriods: 20,
+    maxSessionsPerWeek: 6,
     maxPeriodsPerDay: 4,
     notes: 'GVCN Lớp 5A',
     unavailableSlots: [],

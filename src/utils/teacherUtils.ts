@@ -1,6 +1,59 @@
 import { Teacher, Assignment, ClassItem, Subject, ScheduleCell } from '../types';
 
 /**
+ * Sanitizes and normalizes a teacher object to ensure NO fields are undefined.
+ * Guarantees compatibility with Firestore setDoc() and strict UI rendering.
+ */
+export function normalizeTeacher(teacher: Partial<Teacher>): Teacher {
+  const type: 'homeroom' | 'subject' = teacher.type === 'homeroom' ? 'homeroom' : 'subject';
+  
+  let maxSessions = 6;
+  if (
+    teacher.maxSessionsPerWeek !== undefined &&
+    teacher.maxSessionsPerWeek !== null &&
+    !isNaN(Number(teacher.maxSessionsPerWeek))
+  ) {
+    maxSessions = Math.min(7, Math.max(1, Number(teacher.maxSessionsPerWeek)));
+  }
+
+  const defaultMaxWeekly = type === 'homeroom' ? 20 : 23;
+  const maxWeeklyPeriods =
+    teacher.maxWeeklyPeriods && Number(teacher.maxWeeklyPeriods) > 0
+      ? Number(teacher.maxWeeklyPeriods)
+      : defaultMaxWeekly;
+
+  const maxPeriodsPerDay =
+    teacher.maxPeriodsPerDay && Number(teacher.maxPeriodsPerDay) > 0
+      ? Number(teacher.maxPeriodsPerDay)
+      : 4;
+
+  const unavailableSlots = Array.isArray(teacher.unavailableSlots)
+    ? teacher.unavailableSlots.map((slot) => ({
+        day: slot.day,
+        shift: slot.shift,
+        periodNumber: Number(slot.periodNumber),
+        reason: slot.reason ?? '',
+      }))
+    : [];
+
+  const normalized: Teacher = {
+    id: teacher.id || `t_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    code: teacher.code ?? '',
+    name: teacher.name ?? '',
+    type,
+    mainSubjectId: teacher.mainSubjectId ?? '',
+    homeroomClassId: teacher.homeroomClassId ?? '',
+    maxWeeklyPeriods,
+    maxSessionsPerWeek: maxSessions,
+    maxPeriodsPerDay,
+    notes: teacher.notes ?? '',
+    unavailableSlots,
+  };
+
+  return normalized;
+}
+
+/**
  * Returns the maximum weekly periods for a teacher.
  * Homeroom teacher (GVCN) max default: 20
  * Subject teacher (GV bộ môn) max default: 23

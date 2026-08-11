@@ -29,6 +29,7 @@ import {
   checkTeacherSessionLimit,
   getTeacherGapPeriods,
   getTeacherMaxSessionsPerWeek,
+  normalizeTeacher,
 } from '../../utils/teacherUtils';
 import { ImportTeachersModal } from '../modals/ImportTeachersModal';
 
@@ -145,32 +146,33 @@ export const TeachersView: React.FC<TeachersViewProps> = ({
     const validMaxSessions = Math.min(7, Math.max(1, maxSessionsPerWeek || 6));
 
     if (editingTeacher) {
-      onUpdateTeacher({
+      const updated = normalizeTeacher({
         ...editingTeacher,
         code,
         name,
         type,
-        mainSubjectId,
-        homeroomClassId: type === 'homeroom' ? homeroomClassId : undefined,
+        mainSubjectId: type === 'subject' ? (mainSubjectId || '') : '',
+        homeroomClassId: type === 'homeroom' ? (homeroomClassId || '') : '',
         maxWeeklyPeriods,
         maxSessionsPerWeek: validMaxSessions,
         maxPeriodsPerDay,
-        notes,
+        notes: notes || '',
       });
+      onUpdateTeacher(updated);
     } else {
-      const newTeacher: Teacher = {
+      const newTeacher = normalizeTeacher({
         id: `t_${Date.now()}`,
         code,
         name,
         type,
-        mainSubjectId,
-        homeroomClassId: type === 'homeroom' ? homeroomClassId : undefined,
+        mainSubjectId: type === 'subject' ? (mainSubjectId || '') : '',
+        homeroomClassId: type === 'homeroom' ? (homeroomClassId || '') : '',
         maxWeeklyPeriods,
         maxSessionsPerWeek: validMaxSessions,
         maxPeriodsPerDay,
-        notes,
+        notes: notes || '',
         unavailableSlots: [],
-      };
+      });
       onAddTeacher(newTeacher);
     }
     setIsModalOpen(false);

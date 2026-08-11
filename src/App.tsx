@@ -55,6 +55,7 @@ import {
 
 import { User } from 'firebase/auth';
 import { checkFullSchedule } from './utils/conflictChecker';
+import { normalizeTeacher } from './utils/teacherUtils';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -88,8 +89,9 @@ export default function App() {
           .then((remoteData) => {
             if (remoteData) {
               if (remoteData.teachers) {
-                setTeachers(remoteData.teachers);
-                setStoredTeachers(remoteData.teachers);
+                const normalized = remoteData.teachers.map((t: Teacher) => normalizeTeacher(t));
+                setTeachers(normalized);
+                setStoredTeachers(normalized);
               }
               if (remoteData.classes) {
                 setClasses(remoteData.classes);
@@ -202,13 +204,15 @@ export default function App() {
 
   // Handlers for Teachers
   const handleAddTeacher = async (newTeacher: Teacher) => {
-    const next = [...teachers, newTeacher];
+    const norm = normalizeTeacher(newTeacher);
+    const next = [...teachers, norm];
     setTeachers(next);
     await syncToFirestore({ teachers: next });
   };
 
   const handleUpdateTeacher = async (updatedTeacher: Teacher) => {
-    const next = teachers.map((t) => (t.id === updatedTeacher.id ? updatedTeacher : t));
+    const norm = normalizeTeacher(updatedTeacher);
+    const next = teachers.map((t) => (t.id === norm.id ? norm : t));
     setTeachers(next);
     await syncToFirestore({ teachers: next });
   };
@@ -241,8 +245,9 @@ export default function App() {
   };
 
   const handleBatchSetTeachers = async (newTeachers: Teacher[]) => {
-    setTeachers(newTeachers);
-    await syncToFirestore({ teachers: newTeachers });
+    const normList = newTeachers.map((t) => normalizeTeacher(t));
+    setTeachers(normList);
+    await syncToFirestore({ teachers: normList });
   };
 
   // Handlers for Classes
@@ -260,7 +265,7 @@ export default function App() {
 
   const handleDeleteClass = async (id: string) => {
     const nextClasses = classes.filter((c) => c.id !== id);
-    const nextTeachers = teachers.map((t) => (t.homeroomClassId === id ? { ...t, homeroomClassId: undefined } : t));
+    const nextTeachers = teachers.map((t) => (t.homeroomClassId === id ? normalizeTeacher({ ...t, homeroomClassId: '' }) : t));
     setClasses(nextClasses);
     setTeachers(nextTeachers);
     await syncToFirestore({ classes: nextClasses, teachers: nextTeachers });

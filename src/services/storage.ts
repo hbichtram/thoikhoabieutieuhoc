@@ -17,6 +17,8 @@ import {
   initialVersions,
 } from '../data/initialData';
 
+import { normalizeTeacher } from '../utils/teacherUtils';
+
 const STORAGE_KEYS = {
   TEACHERS: 'tkbsmart_teachers',
   CLASSES: 'tkbsmart_classes',
@@ -30,9 +32,10 @@ const STORAGE_KEYS = {
 export const getStoredTeachers = (): Teacher[] => {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.TEACHERS);
-    return data ? JSON.parse(data) : initialTeachers;
+    const rawTeachers: Teacher[] = data ? JSON.parse(data) : initialTeachers;
+    return rawTeachers.map(normalizeTeacher);
   } catch {
-    return initialTeachers;
+    return initialTeachers.map(normalizeTeacher);
   }
 };
 

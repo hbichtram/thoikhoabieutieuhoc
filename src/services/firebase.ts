@@ -115,6 +115,26 @@ export async function loadFromFirebase<T>(key: string, customUid?: string): Prom
   }
 }
 
+import { normalizeTeacher } from "../utils/teacherUtils";
+
+/**
+ * Validates teacher data for any undefined fields before writing to Firestore.
+ */
+export function validateTeacherData(teacher: any): void {
+  console.log("[FIRESTORE] Teacher payload:", teacher);
+
+  const undefinedFields = Object.entries(teacher)
+    .filter(([_, value]) => value === undefined)
+    .map(([key]) => key);
+
+  if (undefinedFields.length > 0) {
+    console.error(`[FIRESTORE VALIDATION ERROR] Undefined fields in teacher (${teacher.name || teacher.id}):`, undefinedFields);
+    throw new Error(
+      `Teacher data contains undefined fields: ${undefinedFields.join(", ")}`
+    );
+  }
+}
+
 /**
  * Save complete full state to Firestore paths:
  * 1) teachers/{uid}
@@ -138,12 +158,22 @@ export async function saveFullStateToFirestore(fullData: {
 
   try {
     const updatedAt = new Date().toISOString();
-    const payloadStr = JSON.stringify(fullData);
+
+    // 1. Normalize and validate teachers array to ensure 100% no undefined values
+    const normalizedTeachers = (fullData.teachers || []).map((t) => normalizeTeacher(t));
+    normalizedTeachers.forEach((t) => validateTeacherData(t));
+
+    const cleanFullData = {
+      ...fullData,
+      teachers: normalizedTeachers,
+    };
+
+    const payloadStr = JSON.stringify(cleanFullData);
 
     // Write to teachers/{uid}
     const teacherDocRef = doc(db, "teachers", uid);
     await setDoc(teacherDocRef, {
-      teachers: fullData.teachers,
+      teachers: normalizedTeachers,
       updatedAt,
     }, { merge: true });
     console.log(`[FIRESTORE] WRITE SUCCESS: teachers/${uid}`);
@@ -151,8 +181,8 @@ export async function saveFullStateToFirestore(fullData: {
     // Write to weeklySchedules/{uid}
     const scheduleDocRef = doc(db, "weeklySchedules", uid);
     await setDoc(scheduleDocRef, {
-      cells: fullData.cells,
-      timeConfig: fullData.timeConfig,
+      cells: cleanFullData.cells,
+      timeConfig: cleanFullData.timeConfig,
       updatedAt,
     }, { merge: true });
     console.log(`[FIRESTORE] WRITE SUCCESS: weeklySchedules/${uid}`);
@@ -161,8 +191,8 @@ export async function saveFullStateToFirestore(fullData: {
     const dataDocRef = doc(db, "timetable_data", uid);
     await setDoc(dataDocRef, {
       payload: payloadStr,
-      teachersCount: fullData.teachers.length,
-      assignmentsCount: fullData.assignments.length,
+      teachersCount: normalizedTeachers.length,
+      assignmentsCount: cleanFullData.assignments.length,
       updatedAt,
     });
     console.log(`[FIRESTORE] WRITE SUCCESS: timetable_data/${uid}`);

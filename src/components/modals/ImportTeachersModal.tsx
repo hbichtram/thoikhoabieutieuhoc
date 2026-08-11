@@ -11,6 +11,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Teacher, Subject, ClassItem } from '../../types';
+import { normalizeTeacher } from '../../utils/teacherUtils';
 import {
   downloadTeacherSampleExcel,
   parseTeacherExcelFile,
@@ -117,30 +118,31 @@ export const ImportTeachersModal: React.FC<ImportTeachersModalProps> = ({
           skippedCount++;
         } else if (duplicateStrategy === 'update') {
           const existing = updatedTeacherList[existingIndex];
-          updatedTeacherList[existingIndex] = {
+          updatedTeacherList[existingIndex] = normalizeTeacher({
             ...existing,
             name: r.name,
             type: r.type === 'homeroom' ? 'homeroom' : 'subject',
-            homeroomClassId: r.type === 'homeroom' ? r.homeroomClassId : undefined,
-            mainSubjectId: r.type === 'subject' ? r.mainSubjectId : undefined,
+            homeroomClassId: r.type === 'homeroom' ? (r.homeroomClassId || '') : '',
+            mainSubjectId: r.type === 'subject' ? (r.mainSubjectId || '') : '',
             maxWeeklyPeriods: r.maxWeeklyPeriods,
+            maxSessionsPerWeek: 6,
             maxPeriodsPerDay: r.maxPeriodsPerDay,
-          };
+          });
           importedCount++;
         }
       } else {
-        const newTeacher: Teacher = {
+        const newTeacher: Teacher = normalizeTeacher({
           id: `t_excel_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
           code: r.code,
           name: r.name,
           type: r.type === 'homeroom' ? 'homeroom' : 'subject',
-          homeroomClassId: r.type === 'homeroom' ? r.homeroomClassId : undefined,
-          mainSubjectId: r.type === 'subject' ? r.mainSubjectId : undefined,
+          homeroomClassId: r.type === 'homeroom' ? (r.homeroomClassId || '') : '',
+          mainSubjectId: r.type === 'subject' ? (r.mainSubjectId || '') : '',
           maxWeeklyPeriods: r.maxWeeklyPeriods,
           maxSessionsPerWeek: 6,
           maxPeriodsPerDay: r.maxPeriodsPerDay,
           unavailableSlots: [],
-        };
+        });
         newTeacherList.push(newTeacher);
         updatedTeacherList.push(newTeacher);
         importedCount++;
