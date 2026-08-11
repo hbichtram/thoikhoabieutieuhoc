@@ -69,7 +69,53 @@ export function subscribeAuthState(callback: (user: User | null) => void) {
 }
 
 /**
- * Save data payload to Firestore under teachers/{uid}, weeklySchedules/{uid}, timetable_data/{uid}
+ * Single diagnostic helper wrapper for all Firestore write operations
+ */
+export async function performWriteDiagnostic(
+  operation: "setDoc" | "updateDoc" | "deleteDoc" | "addDoc",
+  collectionName: string,
+  docId: string,
+  writeFn: () => Promise<void>,
+  dataSummary?: any
+): Promise<boolean> {
+  const currentUser = auth.currentUser;
+  const authUid = currentUser?.uid || "UNAUTHENTICATED";
+  const fullPath = `${collectionName}/${docId}`;
+
+  console.log("[FIRESTORE WRITE START]", {
+    operation,
+    collection: collectionName,
+    document: docId,
+    fullPath,
+    uid: docId.includes("/") ? docId.split("/")[0] : docId,
+    authUid,
+    data: dataSummary,
+  });
+
+  try {
+    await writeFn();
+    console.log("[FIRESTORE WRITE SUCCESS]", {
+      operation,
+      fullPath,
+      authUid,
+    });
+    return true;
+  } catch (error: any) {
+    console.error("[FIRESTORE WRITE FAILED]", {
+      operation,
+      fullPath,
+      uid: docId.includes("/") ? docId.split("/")[0] : docId,
+      authUid,
+      "error.code": error?.code || "unknown",
+      "error.message": error?.message || String(error),
+      error,
+    });
+    throw error;
+  }
+}
+
+/**
+ * Save data payload to Firestore under timetable_data/{uid}_{key}
  */
 export async function saveToFirebase(key: string, data: any, customUid?: string): Promise<boolean> {
   const uid = customUid || auth.currentUser?.uid;
@@ -78,15 +124,18 @@ export async function saveToFirebase(key: string, data: any, customUid?: string)
     return false;
   }
 
-  try {
-    const docRef = doc(db, "timetable_data", `${uid}_${key}`);
-    await setDoc(docRef, { payload: JSON.stringify(data), updatedAt: new Date().toISOString() });
-    console.log(`[FIRESTORE] WRITE SUCCESS: timetable_data/${uid}_${key}`);
-    return true;
-  } catch (error) {
-    console.error(`[FIRESTORE] WRITE ERROR for timetable_data/${uid}_${key}:`, error);
-    throw error;
-  }
+  const docId = `${uid}_${key}`;
+  const docRef = doc(db, "timetable_data", docId);
+
+  return await performWriteDiagnostic(
+    "setDoc",
+    "timetable_data",
+    docId,
+    async () => {
+      await setDoc(docRef, { payload: JSON.stringify(data), updatedAt: new Date().toISOString() });
+    },
+    { key, dataLength: JSON.stringify(data).length }
+  );
 }
 
 /**
@@ -163,63 +212,68 @@ export async function saveFullStateToFirestore(fullData: {
     return false;
   }
 
-  try {
-    const updatedAt = new Date().toISOString();
+  const updatedAt = new Date().toISOString();
 
-    // 1. Normalize and validate teachers array to ensure 100% no undefined values
-    const normalizedTeachers = (fullData.teachers || []).map((t) => normalizeTeacher(t));
-    normalizedTeachers.forEach((t) => validateTeacherData(t));
+  // 1. Normalize and validate teachers array to ensure 100% no undefined values
+  const normalizedTeachers = (fullData.teachers || []).map((t) => normalizeTeacher(t));
+  normalizedTeachers.forEach((t) => validateTeacherData(t));
 
-    const cleanFullData = {
-      ...fullData,
-      teachers: normalizedTeachers,
-    };
+  const cleanFullData = {
+    ...fullData,
+    teachers: normalizedTeachers,
+  };
 
-    const payloadStr = JSON.stringify(cleanFullData);
+  const payloadStr = JSON.stringify(cleanFullData);
 
-    // 1) Write to teachers/{uid}
-    const teacherPath = `teachers/${uid}`;
-    console.log("[FIRESTORE WRITE PATH]", teacherPath);
-    const teacherDocRef = doc(db, "teachers", uid);
-    await setDoc(teacherDocRef, {
-      teachers: normalizedTeachers,
-      updatedAt,
-    }, { merge: true });
-    console.log(`[FIRESTORE] WRITE SUCCESS: ${teacherPath}`);
+  // 1) Write to teachers/{uid}
+  const teacherDocRef = doc(db, "teachers", uid);
+  await performWriteDiagnostic(
+    "setDoc",
+    "teachers",
+    uid,
+    async () => {
+      await setDoc(teacherDocRef, {
+        teachers: normalizedTeachers,
+        updatedAt,
+      }, { merge: true });
+    },
+    { teachersCount: normalizedTeachers.length }
+  );
 
-    // 2) Write to weeklySchedules/{uid}
-    const schedulePath = `weeklySchedules/${uid}`;
-    console.log("[FIRESTORE WRITE PATH]", schedulePath);
-    const scheduleDocRef = doc(db, "weeklySchedules", uid);
-    await setDoc(scheduleDocRef, {
-      cells: cleanFullData.cells,
-      timeConfig: cleanFullData.timeConfig,
-      updatedAt,
-    }, { merge: true });
-    console.log(`[FIRESTORE] WRITE SUCCESS: ${schedulePath}`);
+  // 2) Write to weeklySchedules/{uid}
+  const scheduleDocRef = doc(db, "weeklySchedules", uid);
+  await performWriteDiagnostic(
+    "setDoc",
+    "weeklySchedules",
+    uid,
+    async () => {
+      await setDoc(scheduleDocRef, {
+        cells: cleanFullData.cells,
+        timeConfig: cleanFullData.timeConfig,
+        updatedAt,
+      }, { merge: true });
+    },
+    { cellsCount: cleanFullData.cells.length }
+  );
 
-    // 3) Write full data bundle to timetable_data/{uid}
-    const dataPath = `timetable_data/${uid}`;
-    console.log("[FIRESTORE WRITE PATH]", dataPath);
-    const dataDocRef = doc(db, "timetable_data", uid);
-    await setDoc(dataDocRef, {
-      payload: payloadStr,
-      teachersCount: normalizedTeachers.length,
-      assignmentsCount: cleanFullData.assignments.length,
-      updatedAt,
-    });
-    console.log(`[FIRESTORE] WRITE SUCCESS: ${dataPath}`);
+  // 3) Write full data bundle to timetable_data/{uid}
+  const dataDocRef = doc(db, "timetable_data", uid);
+  await performWriteDiagnostic(
+    "setDoc",
+    "timetable_data",
+    uid,
+    async () => {
+      await setDoc(dataDocRef, {
+        payload: payloadStr,
+        teachersCount: normalizedTeachers.length,
+        assignmentsCount: cleanFullData.assignments.length,
+        updatedAt,
+      });
+    },
+    { payloadSize: payloadStr.length }
+  );
 
-    return true;
-  } catch (error: any) {
-    console.error("[FIRESTORE ERROR]", {
-      code: error?.code,
-      message: error?.message,
-      uid,
-      error
-    });
-    throw error;
-  }
+  return true;
 }
 
 /**
@@ -278,25 +332,21 @@ export async function saveTimetableVersionToFirestore(version: any, customUid?: 
     return false;
   }
 
-  const path = `teachers/${uid}/timetableVersions/${version.id}`;
-  try {
-    console.log("[FIRESTORE WRITE PATH]", path);
-    const versionRef = doc(db, "teachers", uid, "timetableVersions", version.id);
-    await setDoc(versionRef, {
-      ...version,
-      updatedAt: new Date().toISOString(),
-    });
-    console.log(`[FIRESTORE] WRITE SUCCESS: ${path}`);
-    return true;
-  } catch (error: any) {
-    console.error("[FIRESTORE ERROR]", {
-      code: error?.code,
-      message: error?.message,
-      path,
-      uid
-    });
-    throw error;
-  }
+  const versionRef = doc(db, "teachers", uid, "timetableVersions", version.id);
+  const docId = `${uid}/timetableVersions/${version.id}`;
+
+  return await performWriteDiagnostic(
+    "setDoc",
+    "teachers",
+    docId,
+    async () => {
+      await setDoc(versionRef, {
+        ...version,
+        updatedAt: new Date().toISOString(),
+      });
+    },
+    { versionId: version.id, name: version.name }
+  );
 }
 
 /**
@@ -315,20 +365,15 @@ export async function deleteTimetableVersionFromFirestore(versionId: string, cus
     return false;
   }
 
-  const path = `teachers/${uid}/timetableVersions/${versionId}`;
-  try {
-    console.log("[FIRESTORE DELETE PATH]", path);
-    const versionRef = doc(db, "teachers", uid, "timetableVersions", versionId);
-    await deleteDoc(versionRef);
-    console.log(`[FIRESTORE] DELETE SUCCESS: ${path}`);
-    return true;
-  } catch (error: any) {
-    console.error("[FIRESTORE ERROR]", {
-      code: error?.code,
-      message: error?.message,
-      path,
-      uid
-    });
-    throw error;
-  }
+  const versionRef = doc(db, "teachers", uid, "timetableVersions", versionId);
+  const docId = `${uid}/timetableVersions/${versionId}`;
+
+  return await performWriteDiagnostic(
+    "deleteDoc",
+    "teachers",
+    docId,
+    async () => {
+      await deleteDoc(versionRef);
+    }
+  );
 }

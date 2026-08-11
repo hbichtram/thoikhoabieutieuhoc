@@ -64,6 +64,7 @@ export default function App() {
   // Firebase Auth & Sync State
   const [user, setUser] = useState<User | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
@@ -182,8 +183,11 @@ export default function App() {
       };
 
       await saveFullStateToFirestore(fullData, user.uid);
+      setSyncError(null);
       console.log(`[FIRESTORE] WRITE SUCCESS for uid: ${user.uid}`);
-    } catch (error) {
+    } catch (error: any) {
+      const errMsg = error?.code || error?.message || String(error);
+      setSyncError(errMsg);
       console.error("[FIRESTORE] WRITE ERROR:", error);
       alert(`⚠️ Lỗi ghi Firestore: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -440,6 +444,7 @@ export default function App() {
         stats={stats}
         user={user}
         isSyncing={isSyncing}
+        syncError={syncError}
         isLoggingIn={isLoggingIn}
         loginError={loginError}
         onNavigateToAudit={() => setActiveTab('audit')}

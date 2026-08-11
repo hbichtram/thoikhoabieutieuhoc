@@ -22,6 +22,7 @@ interface HeaderProps {
   stats: ScheduleStats;
   user: User | null;
   isSyncing: boolean;
+  syncError?: string | null;
   isLoggingIn?: boolean;
   loginError?: string | null;
   onNavigateToAudit: () => void;
@@ -35,6 +36,7 @@ export const Header: React.FC<HeaderProps> = ({
   stats,
   user,
   isSyncing,
+  syncError,
   isLoggingIn = false,
   loginError,
   onNavigateToAudit,
@@ -82,6 +84,11 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="flex items-center gap-1.5 text-amber-400 animate-pulse">
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                   <span>🔄 Đang đồng bộ...</span>
+                </span>
+              ) : syncError ? (
+                <span className="flex items-center gap-1.5 text-rose-400" title={syncError}>
+                  <CloudOff className="w-3.5 h-3.5 text-rose-400" />
+                  <span>🔴 Firestore lỗi: {syncError}</span>
                 </span>
               ) : (
                 <span className="flex items-center gap-1.5 text-emerald-400" title={`UID: ${user.uid}`}>
