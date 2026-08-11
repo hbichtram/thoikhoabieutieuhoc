@@ -2,7 +2,7 @@
  * TKB SMART - Trợ lý thiết kế thời khóa biểu trường tiểu học
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { Sidebar, TabType } from './components/Sidebar';
 import { DashboardView } from './components/views/DashboardView';
@@ -44,6 +44,7 @@ import {
 } from './services/storage';
 
 import {
+  auth,
   subscribeAuthState,
   loginWithGoogle,
   logoutFirebase,
@@ -62,11 +63,15 @@ export default function App() {
   const [hasUnsavedScheduleChanges, setHasUnsavedScheduleChanges] = useState<boolean>(false);
 
   // Firebase Auth & Sync State
+  const [authReady, setAuthReady] = useState<boolean>(false);
   const [user, setUser] = useState<User | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  const isSeedingRef = useRef<boolean>(false);
+  const loadedUidRef = useRef<string | null>(null);
 
   // Core States
   const [teachers, setTeachers] = useState<Teacher[]>(getStoredTeachers);
@@ -81,70 +86,103 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = subscribeAuthState((currentUser) => {
       setUser(currentUser);
-      if (currentUser) {
-        console.log(`[FIREBASE AUTH] Logged in user uid = ${currentUser.uid}, email = ${currentUser.email}`);
-        setLoginError(null);
-        // Load data from Firestore on sign-in
-        setIsSyncing(true);
-        loadFullStateFromFirestore(currentUser.uid)
-          .then((remoteData) => {
-            if (remoteData) {
-              if (remoteData.teachers) {
-                const normalized = remoteData.teachers.map((t: Teacher) => normalizeTeacher(t));
-                setTeachers(normalized);
-                setStoredTeachers(normalized);
-              }
-              if (remoteData.classes) {
-                setClasses(remoteData.classes);
-                setStoredClasses(remoteData.classes);
-              }
-              if (remoteData.subjects) {
-                setSubjects(remoteData.subjects);
-                setStoredSubjects(remoteData.subjects);
-              }
-              if (remoteData.assignments) {
-                setAssignments(remoteData.assignments);
-                setStoredAssignments(remoteData.assignments);
-              }
-              if (remoteData.timeConfig) {
-                setTimeConfig(remoteData.timeConfig);
-                setStoredTimeConfig(remoteData.timeConfig);
-              }
-              if (remoteData.cells) {
-                setCells(remoteData.cells);
-                setStoredScheduleCells(remoteData.cells);
-              }
-              if (remoteData.versions) {
-                setVersions(remoteData.versions);
-                setStoredVersions(remoteData.versions);
-              }
-              console.log(`[FIRESTORE] READ SUCCESS: Fully loaded data from Firestore for uid: ${currentUser.uid}`);
-            } else {
-              console.log(`[FIRESTORE] No existing Firestore document for uid ${currentUser.uid}. Seeding initial data...`);
-              saveFullStateToFirestore({
-                teachers: getStoredTeachers(),
-                classes: getStoredClasses(),
-                subjects: getStoredSubjects(),
-                assignments: getStoredAssignments(),
-                timeConfig: getStoredTimeConfig(),
-                cells: getStoredScheduleCells(),
-                versions: getStoredVersions(),
-              }, currentUser.uid);
-            }
-          })
-          .catch((err) => {
-            console.error("[FIRESTORE] Failed to load data from Firestore:", err);
-          })
-          .finally(() => {
-            setIsSyncing(false);
-          });
-      } else {
-        console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng.");
+      setAuthReady(true);
+      console.log("[AUTH READY STATE]", {
+        authReady: true,
+        isAuthenticated: !!currentUser,
+        uid: currentUser?.uid,
+        email: currentUser?.email,
+      });
+
+      if (!currentUser) {
+        loadedUidRef.current = null;
+        isSeedingRef.current = false;
+        setSyncError(null);
+        setIsSyncing(false);
       }
     });
 
     return () => unsubscribe();
   }, []);
+
+  // 2. Load or Seed Firestore Data ONLY after Auth is Ready and User exists
+  useEffect(() => {
+    if (!authReady || !user) return;
+
+    if (loadedUidRef.current === user.uid) return;
+    loadedUidRef.current = user.uid;
+
+    setIsSyncing(true);
+    loadFullStateFromFirestore(user.uid)
+      .then((remoteData) => {
+        if (remoteData) {
+          if (remoteData.teachers) {
+            const normalized = remoteData.teachers.map((t: Teacher) => normalizeTeacher(t));
+            setTeachers(normalized);
+            setStoredTeachers(normalized);
+          }
+          if (remoteData.classes) {
+            setClasses(remoteData.classes);
+            setStoredClasses(remoteData.classes);
+          }
+          if (remoteData.subjects) {
+            setSubjects(remoteData.subjects);
+            setStoredSubjects(remoteData.subjects);
+          }
+          if (remoteData.assignments) {
+            setAssignments(remoteData.assignments);
+            setStoredAssignments(remoteData.assignments);
+          }
+          if (remoteData.timeConfig) {
+            setTimeConfig(remoteData.timeConfig);
+            setStoredTimeConfig(remoteData.timeConfig);
+          }
+          if (remoteData.cells) {
+            setCells(remoteData.cells);
+            setStoredScheduleCells(remoteData.cells);
+          }
+          if (remoteData.versions) {
+            setVersions(remoteData.versions);
+            setStoredVersions(remoteData.versions);
+          }
+          console.log(`[FIRESTORE READ SUCCESS] Fully loaded data from Firestore for uid: ${user.uid}`);
+          setSyncError(null);
+        } else {
+          const activeAuth = auth.currentUser;
+          if (!isSeedingRef.current && activeAuth && activeAuth.uid === user.uid) {
+            isSeedingRef.current = true;
+            console.log(`[FIRESTORE] No existing Firestore document for uid ${user.uid}. Seeding initial data...`);
+            saveFullStateToFirestore({
+              teachers: getStoredTeachers(),
+              classes: getStoredClasses(),
+              subjects: getStoredSubjects(),
+              assignments: getStoredAssignments(),
+              timeConfig: getStoredTimeConfig(),
+              cells: getStoredScheduleCells(),
+              versions: getStoredVersions(),
+            }, user.uid)
+              .then(() => {
+                setSyncError(null);
+                console.log(`[FIRESTORE SEED SUCCESS] Initial data successfully seeded for uid: ${user.uid}`);
+              })
+              .catch((err) => {
+                console.error("[FIRESTORE SEED FAILED]", err);
+                setSyncError(err?.code || err?.message || String(err));
+              })
+              .finally(() => {
+                isSeedingRef.current = false;
+              });
+          }
+        }
+      })
+      .catch((err) => {
+        console.error("[FIRESTORE READ FAILED]", err);
+        setSyncError(err?.code || err?.message || String(err));
+      })
+      .finally(() => {
+        setIsSyncing(false);
+      });
+  }, [authReady, user]);
 
   // Sync state to LocalStorage as secondary fallback cache
   useEffect(() => { setStoredTeachers(teachers); }, [teachers]);
@@ -165,8 +203,13 @@ export default function App() {
     cells?: ScheduleCell[];
     versions?: ScheduleVersion[];
   }) => {
-    if (!user) {
-      console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng. Bỏ qua ghi Firestore.");
+    const activeAuthUser = auth.currentUser;
+    if (!authReady || !user || !activeAuthUser || activeAuthUser.uid !== user.uid) {
+      console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng hoặc chưa Auth Ready. Bỏ qua ghi Firestore.", {
+        authReady,
+        hasUser: !!user,
+        activeAuthUid: activeAuthUser?.uid
+      });
       return;
     }
 
@@ -184,16 +227,16 @@ export default function App() {
 
       await saveFullStateToFirestore(fullData, user.uid);
       setSyncError(null);
-      console.log(`[FIRESTORE] WRITE SUCCESS for uid: ${user.uid}`);
+      console.log(`[FIRESTORE WRITE SUCCESS] for uid: ${user.uid}`);
     } catch (error: any) {
       const errMsg = error?.code || error?.message || String(error);
       setSyncError(errMsg);
-      console.error("[FIRESTORE] WRITE ERROR:", error);
+      console.error("[FIRESTORE WRITE ERROR]:", error);
       alert(`⚠️ Lỗi ghi Firestore: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsSyncing(false);
     }
-  }, [user, teachers, classes, subjects, assignments, timeConfig, cells, versions]);
+  }, [authReady, user, teachers, classes, subjects, assignments, timeConfig, cells, versions]);
 
   const handleTabChange = (newTab: TabType) => {
     if (activeTab === 'timetable' && hasUnsavedScheduleChanges && newTab !== 'timetable') {
@@ -433,7 +476,10 @@ export default function App() {
   const handleLogout = async () => {
     await logoutFirebase();
     setUser(null);
+    setSyncError(null);
     setLoginError(null);
+    loadedUidRef.current = null;
+    isSeedingRef.current = false;
   };
 
   return (

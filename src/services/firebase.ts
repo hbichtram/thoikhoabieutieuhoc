@@ -79,33 +79,42 @@ export async function performWriteDiagnostic(
   dataSummary?: any
 ): Promise<boolean> {
   const currentUser = auth.currentUser;
-  const authUid = currentUser?.uid || "UNAUTHENTICATED";
+  const authUid = currentUser?.uid;
+  const isAuthenticated = !!currentUser && !!authUid;
   const fullPath = `${collectionName}/${docId}`;
 
   console.log("[FIRESTORE WRITE START]", {
-    operation,
-    collection: collectionName,
-    document: docId,
-    fullPath,
-    uid: docId.includes("/") ? docId.split("/")[0] : docId,
-    authUid,
+    "AUTH READY": isAuthenticated,
+    "AUTH UID": authUid || "NONE",
+    "CURRENT USER": isAuthenticated,
+    OPERATION: operation,
+    "FULL PATH": fullPath,
     data: dataSummary,
   });
+
+  if (!currentUser || !authUid) {
+    console.warn("[FIRESTORE WRITE ABORTED] auth.currentUser is null or unauthenticated. Operation cancelled.", {
+      fullPath,
+      operation,
+    });
+    return false;
+  }
 
   try {
     await writeFn();
     console.log("[FIRESTORE WRITE SUCCESS]", {
-      operation,
-      fullPath,
-      authUid,
+      "AUTH READY": true,
+      "AUTH UID": authUid,
+      OPERATION: operation,
+      "FULL PATH": fullPath,
     });
     return true;
   } catch (error: any) {
     console.error("[FIRESTORE WRITE FAILED]", {
-      operation,
-      fullPath,
-      uid: docId.includes("/") ? docId.split("/")[0] : docId,
-      authUid,
+      "AUTH READY": isAuthenticated,
+      "AUTH UID": authUid || "NONE",
+      OPERATION: operation,
+      "FULL PATH": fullPath,
       "error.code": error?.code || "unknown",
       "error.message": error?.message || String(error),
       error,
@@ -118,8 +127,9 @@ export async function performWriteDiagnostic(
  * Save data payload to Firestore under timetable_data/{uid}_{key}
  */
 export async function saveToFirebase(key: string, data: any, customUid?: string): Promise<boolean> {
-  const uid = customUid || auth.currentUser?.uid;
-  if (!uid) {
+  const currentUser = auth.currentUser;
+  const uid = customUid || currentUser?.uid;
+  if (!currentUser || !uid || currentUser.uid !== uid) {
     console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng. Không thể ghi Firestore.");
     return false;
   }
@@ -142,8 +152,9 @@ export async function saveToFirebase(key: string, data: any, customUid?: string)
  * Load data payload from Firestore
  */
 export async function loadFromFirebase<T>(key: string, customUid?: string): Promise<T | null> {
-  const uid = customUid || auth.currentUser?.uid;
-  if (!uid) {
+  const currentUser = auth.currentUser;
+  const uid = customUid || currentUser?.uid;
+  if (!currentUser || !uid || currentUser.uid !== uid) {
     console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng.");
     return null;
   }
@@ -199,16 +210,19 @@ export async function saveFullStateToFirestore(fullData: {
   cells: any[];
   versions: any[];
 }, customUid?: string): Promise<boolean> {
-  const uid = customUid || auth.currentUser?.uid;
+  const currentUser = auth.currentUser;
+  const uid = customUid || currentUser?.uid;
 
-  console.log("[AUTH CHECK]", {
-    isAuthenticated: !!auth.currentUser,
-    uid: uid,
-    email: auth.currentUser?.email
+  console.log("[AUTH CHECK BEFORE WRITE]", {
+    authReady: !!currentUser,
+    isAuthenticated: !!currentUser,
+    authUid: currentUser?.uid,
+    targetUid: uid,
+    email: currentUser?.email
   });
 
-  if (!uid) {
-    console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng. Bỏ qua ghi Firestore.");
+  if (!currentUser || !uid || currentUser.uid !== uid) {
+    console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng hoặc UID không khớp. Bỏ qua ghi Firestore.");
     return false;
   }
 
@@ -277,42 +291,50 @@ export async function saveFullStateToFirestore(fullData: {
 }
 
 /**
- * Load full state from Firestore path timetable_data/{uid} or teachers/{uid}
+ * Load full state from Firestore path timetable_data/{uid}
  */
 export async function loadFullStateFromFirestore(customUid?: string) {
-  const uid = customUid || auth.currentUser?.uid;
-  console.log("[AUTH CHECK]", {
-    isAuthenticated: !!auth.currentUser,
-    uid: uid,
-    email: auth.currentUser?.email
+  const currentUser = auth.currentUser;
+  const uid = customUid || currentUser?.uid;
+  const isAuthenticated = !!currentUser && !!uid && currentUser.uid === uid;
+  const dataPath = `timetable_data/${uid}`;
+
+  console.log("[FIRESTORE READ START]", {
+    "AUTH READY": isAuthenticated,
+    "AUTH UID": currentUser?.uid || "NONE",
+    "CURRENT USER": isAuthenticated,
+    OPERATION: "getDoc",
+    "FULL PATH": dataPath,
   });
 
-  if (!uid) {
-    console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng.");
+  if (!currentUser || !uid || currentUser.uid !== uid) {
+    console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng hoặc UID không khớp. Bỏ qua đọc Firestore.");
     return null;
   }
 
-  const dataPath = `timetable_data/${uid}`;
   try {
-    console.log("[FIRESTORE READ PATH]", dataPath);
     const dataDocRef = doc(db, "timetable_data", uid);
     const snap = await getDoc(dataDocRef);
     if (snap.exists()) {
       const data = snap.data();
       if (data && data.payload) {
-        console.log(`[FIRESTORE] READ SUCCESS: ${dataPath}`);
+        console.log(`[FIRESTORE READ SUCCESS] ${dataPath}`);
         return JSON.parse(data.payload);
       }
     }
+    console.log(`[FIRESTORE READ NOT FOUND] ${dataPath}`);
     return null;
   } catch (error: any) {
-    console.error("[FIRESTORE ERROR]", {
-      code: error?.code,
-      message: error?.message,
-      path: dataPath,
-      uid
+    console.error("[FIRESTORE READ FAILED]", {
+      "AUTH READY": isAuthenticated,
+      "AUTH UID": currentUser?.uid || "NONE",
+      OPERATION: "getDoc",
+      "FULL PATH": dataPath,
+      "error.code": error?.code || "unknown",
+      "error.message": error?.message || String(error),
+      error
     });
-    return null;
+    throw error;
   }
 }
 
@@ -320,15 +342,11 @@ export async function loadFullStateFromFirestore(customUid?: string) {
  * Save a timetable version to teachers/{uid}/timetableVersions/{versionId}
  */
 export async function saveTimetableVersionToFirestore(version: any, customUid?: string): Promise<boolean> {
-  const uid = customUid || auth.currentUser?.uid;
-  console.log("[AUTH CHECK]", {
-    isAuthenticated: !!auth.currentUser,
-    uid: uid,
-    email: auth.currentUser?.email
-  });
+  const currentUser = auth.currentUser;
+  const uid = customUid || currentUser?.uid;
 
-  if (!uid) {
-    console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng.");
+  if (!currentUser || !uid || currentUser.uid !== uid) {
+    console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng hoặc UID không khớp.");
     return false;
   }
 
@@ -353,15 +371,11 @@ export async function saveTimetableVersionToFirestore(version: any, customUid?: 
  * Delete a timetable version from teachers/{uid}/timetableVersions/{versionId}
  */
 export async function deleteTimetableVersionFromFirestore(versionId: string, customUid?: string): Promise<boolean> {
-  const uid = customUid || auth.currentUser?.uid;
-  console.log("[AUTH CHECK]", {
-    isAuthenticated: !!auth.currentUser,
-    uid: uid,
-    email: auth.currentUser?.email
-  });
+  const currentUser = auth.currentUser;
+  const uid = customUid || currentUser?.uid;
 
-  if (!uid) {
-    console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng.");
+  if (!currentUser || !uid || currentUser.uid !== uid) {
+    console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng hoặc UID không khớp.");
     return false;
   }
 
