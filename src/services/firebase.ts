@@ -68,18 +68,7 @@ export function subscribeAuthState(callback: (user: User | null) => void) {
   });
 }
 
-/**
- * Ensure the current Firebase Auth user's ID token is ready and fresh before making Firestore API calls
- */
-export async function ensureAuthTokenReady(): Promise<User> {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error("AUTH_REQUIRED");
-  }
-  // Force token refresh to ensure Auth token is attached and synced with Firestore SDK
-  await currentUser.getIdToken(true);
-  return currentUser;
-}
+let requestCounter = 0;
 
 /**
  * Single diagnostic helper wrapper for all Firestore write operations
@@ -92,11 +81,11 @@ export async function performWriteDiagnostic(
   dataSummary?: any,
   context: string = "UNKNOWN_CONTEXT"
 ): Promise<boolean> {
-  let currentUser: User;
-  try {
-    currentUser = await ensureAuthTokenReady();
-  } catch (e) {
-    console.warn("[FIRESTORE WRITE ABORTED] auth.currentUser is null or token not ready.", {
+  const reqId = ++requestCounter;
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    console.warn(`[FIRESTORE REQUEST #${reqId} ABORTED] User unauthenticated.`, {
+      requestId: reqId,
       context,
       collectionName,
       docId,
@@ -107,38 +96,43 @@ export async function performWriteDiagnostic(
   const authUid = currentUser.uid;
   const fullPath = `${collectionName}/${docId}`;
 
-  console.log("[FIRESTORE WRITE START]", {
-    context,
-    "AUTH READY": true,
-    "AUTH UID": authUid,
-    "CURRENT USER": true,
-    OPERATION: operation,
-    "FULL PATH": fullPath,
-    data: dataSummary,
-  });
+  console.log(`[FIRESTORE REQUEST #${reqId} START]
+requestId: ${reqId}
+context: ${context}
+operation: ${operation}
+fullPath: ${fullPath}
+authUid: ${authUid}
+authReady: true
+projectId: ${firebaseConfig.projectId}
+databaseId: (default)`, dataSummary || "");
 
   try {
     await writeFn();
-    console.log("[FIRESTORE WRITE SUCCESS]", {
-      context,
-      "AUTH READY": true,
-      "AUTH UID": authUid,
-      OPERATION: operation,
-      "FULL PATH": fullPath,
-    });
+    console.log(`[FIRESTORE REQUEST #${reqId} SUCCESS]
+requestId: ${reqId}
+context: ${context}
+operation: ${operation}
+fullPath: ${fullPath}
+authUid: ${authUid}
+authReady: true
+projectId: ${firebaseConfig.projectId}
+databaseId: (default)`);
     return true;
   } catch (error: any) {
-    console.error("[FIRESTORE WRITE FAILED]", {
-      context,
-      "AUTH READY": true,
-      "AUTH UID": authUid,
-      OPERATION: operation,
-      "FULL PATH": fullPath,
-      "error.code": error?.code || "unknown",
-      "error.message": error?.message || String(error),
-      error,
-    });
-    console.trace("[FIRESTORE WRITE FAILED TRACE]");
+    const errCode = error?.code || "unknown";
+    const errMsg = error?.message || String(error);
+    console.error(`[FIRESTORE REQUEST #${reqId} FAILED]
+requestId: ${reqId}
+context: ${context}
+operation: ${operation}
+fullPath: ${fullPath}
+authUid: ${authUid}
+authReady: true
+projectId: ${firebaseConfig.projectId}
+databaseId: (default)
+error.code: ${errCode}
+error.message: ${errMsg}`, error);
+    console.trace(`[FIRESTORE REQUEST #${reqId} FAILED TRACE]`);
     throw error;
   }
 }
@@ -243,19 +237,19 @@ export async function saveFullStateToFirestore(
   const currentUser = auth.currentUser;
   const uid = customUid || currentUser?.uid;
 
-  console.log("[AUTH CHECK BEFORE WRITE]", {
-    context,
-    authReady: !!currentUser,
-    isAuthenticated: !!currentUser,
-    authUid: currentUser?.uid,
-    targetUid: uid,
-    email: currentUser?.email
-  });
-
   if (!currentUser || !uid || currentUser.uid !== uid) {
     console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng hoặc UID không khớp. Bỏ qua ghi Firestore.");
     return false;
   }
+
+  console.log("[AUTH CHECK BEFORE WRITE]", {
+    context,
+    authReady: true,
+    isAuthenticated: true,
+    authUid: currentUser.uid,
+    targetUid: uid,
+    email: currentUser.email
+  });
 
   const updatedAt = new Date().toISOString();
 
@@ -328,37 +322,26 @@ export async function saveFullStateToFirestore(
  * Load full state from Firestore path timetable_data/{uid}
  */
 export async function loadFullStateFromFirestore(customUid?: string) {
-  let user: User;
-  try {
-    user = await ensureAuthTokenReady();
-  } catch (e) {
-    console.warn("[FIREBASE AUTH] Auth token not ready or user unauthenticated. Bỏ qua đọc Firestore.");
-    return null;
-  }
+  const reqId = ++requestCounter;
+  const currentUser = auth.currentUser;
+  const uid = customUid || currentUser?.uid;
 
-  const uid = customUid || user.uid;
-
-  if (auth.currentUser?.uid !== uid || user.uid !== uid) {
-    console.warn("[FIREBASE AUTH] UID mismatch after token refresh. ABORT READ.", {
-      authUid: auth.currentUser?.uid,
-      userUid: user.uid,
-      targetUid: uid,
-    });
+  if (!currentUser || !uid || currentUser.uid !== uid) {
+    console.warn(`[FIRESTORE REQUEST #${reqId} ABORTED] User unauthenticated or UID mismatch.`);
     return null;
   }
 
   const dataPath = `timetable_data/${uid}`;
 
-  console.log(`[FIRESTORE READ AUTH READY] uid=${user.uid} tokenReady=true`);
-  console.log(`[FIRESTORE READ START]
-collection: timetable_data
-document: ${uid}
-FULL PATH: ${dataPath}
+  console.log(`[FIRESTORE REQUEST #${reqId} START]
+requestId: ${reqId}
+context: LOAD_FULL_STATE
+operation: getDoc
+fullPath: ${dataPath}
+authUid: ${currentUser.uid}
+authReady: true
 projectId: ${firebaseConfig.projectId}
-databaseId: (default)
-AUTH UID: ${user.uid}
-AUTH READY: true
-CURRENT USER: true`);
+databaseId: (default)`);
 
   try {
     const dataDocRef = doc(db, "timetable_data", uid);
@@ -366,16 +349,42 @@ CURRENT USER: true`);
     if (snap.exists()) {
       const data = snap.data();
       if (data && data.payload) {
-        console.log(`[FIRESTORE READ SUCCESS] fullPath=${dataPath}`);
+        console.log(`[FIRESTORE REQUEST #${reqId} SUCCESS]
+requestId: ${reqId}
+context: LOAD_FULL_STATE
+operation: getDoc
+fullPath: ${dataPath}
+authUid: ${currentUser.uid}
+authReady: true
+projectId: ${firebaseConfig.projectId}
+databaseId: (default)`);
         return JSON.parse(data.payload);
       }
     }
-    console.log(`[FIRESTORE READ NOT FOUND] fullPath=${dataPath}`);
+    console.log(`[FIRESTORE REQUEST #${reqId} SUCCESS] (Document not found)
+requestId: ${reqId}
+context: LOAD_FULL_STATE
+operation: getDoc
+fullPath: ${dataPath}
+authUid: ${currentUser.uid}
+authReady: true
+projectId: ${firebaseConfig.projectId}
+databaseId: (default)`);
     return null;
   } catch (error: any) {
     const errCode = error?.code || "unknown";
     const errMsg = error?.message || String(error);
-    console.error(`[FIRESTORE READ FAILED] fullPath=${dataPath} error.code=${errCode} error.message=${errMsg}`, error);
+    console.error(`[FIRESTORE REQUEST #${reqId} FAILED]
+requestId: ${reqId}
+context: LOAD_FULL_STATE
+operation: getDoc
+fullPath: ${dataPath}
+authUid: ${currentUser.uid}
+authReady: true
+projectId: ${firebaseConfig.projectId}
+databaseId: (default)
+error.code: ${errCode}
+error.message: ${errMsg}`, error);
     throw error;
   }
 }

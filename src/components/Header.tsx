@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Calendar,
   AlertTriangle,
@@ -45,6 +45,13 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
 }) => {
   const [showUserInfoModal, setShowUserInfoModal] = useState<boolean>(false);
+
+  useEffect(() => {
+    console.log("[HEADER FIRESTORE STATE]", {
+      syncError,
+      syncStatus: isSyncing ? "SYNCING" : syncError ? "ERROR" : "SYNCED"
+    });
+  }, [syncError, isSyncing]);
 
   return (
     <>

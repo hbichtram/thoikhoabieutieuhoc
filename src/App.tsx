@@ -67,6 +67,17 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+
+  const updateSyncError = useCallback((val: string | null, source: string) => {
+    console.group("[SYNC ERROR SET]");
+    console.log("value =", val);
+    console.log("source =", source);
+    if (val) {
+      console.trace("[SYNC ERROR CALL STACK]");
+    }
+    console.groupEnd();
+    setSyncError(val);
+  }, []);
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
@@ -97,13 +108,13 @@ export default function App() {
       if (!currentUser) {
         loadedUidRef.current = null;
         isSeedingRef.current = false;
-        setSyncError(null);
+        updateSyncError(null, "AUTH_STATE_NULL");
         setIsSyncing(false);
       }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [updateSyncError]);
 
   // 2. Load or Seed Firestore Data ONLY after Auth is Ready and User exists
   useEffect(() => {
@@ -113,7 +124,7 @@ export default function App() {
     loadedUidRef.current = user.uid;
 
     setIsSyncing(true);
-    setSyncError(null);
+    updateSyncError(null, "LOAD_FULL_STATE_START");
     loadFullStateFromFirestore(user.uid)
       .then((remoteData) => {
         if (remoteData) {
@@ -147,7 +158,7 @@ export default function App() {
             setStoredVersions(remoteData.versions);
           }
           console.log(`[FIRESTORE READ SUCCESS] Fully loaded data from Firestore for uid: ${user.uid}`);
-          setSyncError(null);
+          updateSyncError(null, "LOAD_FULL_STATE_SUCCESS");
         } else {
           const activeAuth = auth.currentUser;
           if (!isSeedingRef.current && activeAuth && activeAuth.uid === user.uid) {
@@ -163,12 +174,12 @@ export default function App() {
               versions: getStoredVersions(),
             }, user.uid, "SEED_INITIAL_DATA")
               .then(() => {
-                setSyncError(null);
+                updateSyncError(null, "SEED_INITIAL_DATA_SUCCESS");
                 console.log(`[FIRESTORE SEED SUCCESS] Initial data successfully seeded for uid: ${user.uid}`);
               })
               .catch((err) => {
                 console.error("[FIRESTORE SEED FAILED]", err);
-                setSyncError(err?.code || err?.message || String(err));
+                updateSyncError(err?.code || err?.message || String(err), "SEED_INITIAL_DATA_FAILED");
               })
               .finally(() => {
                 isSeedingRef.current = false;
@@ -178,12 +189,12 @@ export default function App() {
       })
       .catch((err) => {
         console.error("[FIRESTORE READ FAILED]", err);
-        setSyncError(err?.code || err?.message || String(err));
+        updateSyncError(err?.code || err?.message || String(err), "LOAD_FULL_STATE_FAILED");
       })
       .finally(() => {
         setIsSyncing(false);
       });
-  }, [authReady, user]);
+  }, [authReady, user, updateSyncError]);
 
   // Sync state to LocalStorage as secondary fallback cache
   useEffect(() => { setStoredTeachers(teachers); }, [teachers]);
@@ -230,17 +241,17 @@ export default function App() {
       };
 
       await saveFullStateToFirestore(fullData, user.uid, context);
-      setSyncError(null);
+      updateSyncError(null, `WRITE_SUCCESS_${context}`);
       console.log(`[FIRESTORE WRITE SUCCESS] (${context}) for uid: ${user.uid}`);
     } catch (error: any) {
       const errMsg = error?.code || error?.message || String(error);
-      setSyncError(errMsg);
+      updateSyncError(errMsg, `WRITE_ERROR_${context}`);
       console.error(`[FIRESTORE WRITE ERROR] (${context}):`, error);
       alert(`⚠️ Lỗi ghi Firestore [${context}]: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsSyncing(false);
     }
-  }, [authReady, user, teachers, classes, subjects, assignments, timeConfig, cells, versions]);
+  }, [authReady, user, teachers, classes, subjects, assignments, timeConfig, cells, versions, updateSyncError]);
 
   const handleTabChange = (newTab: TabType) => {
     if (activeTab === 'timetable' && hasUnsavedScheduleChanges && newTab !== 'timetable') {
@@ -454,7 +465,7 @@ export default function App() {
   const handleGoogleLogin = async () => {
     setIsLoggingIn(true);
     setLoginError(null);
-    setSyncError(null);
+    updateSyncError(null, "LOGIN_GOOGLE_START");
     loadedUidRef.current = null;
     isSeedingRef.current = false;
     try {
@@ -483,7 +494,7 @@ export default function App() {
   const handleLogout = async () => {
     await logoutFirebase();
     setUser(null);
-    setSyncError(null);
+    updateSyncError(null, "LOGOUT_CLEANUP");
     setLoginError(null);
     loadedUidRef.current = null;
     isSeedingRef.current = false;
