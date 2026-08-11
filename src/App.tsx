@@ -160,31 +160,8 @@ export default function App() {
           console.log(`[FIRESTORE READ SUCCESS] Fully loaded data from Firestore for uid: ${user.uid}`);
           updateSyncError(null, "LOAD_FULL_STATE_SUCCESS");
         } else {
-          const activeAuth = auth.currentUser;
-          if (!isSeedingRef.current && activeAuth && activeAuth.uid === user.uid) {
-            isSeedingRef.current = true;
-            console.log(`[FIRESTORE] No existing Firestore document for uid ${user.uid}. Seeding initial data...`);
-            saveFullStateToFirestore({
-              teachers: getStoredTeachers(),
-              classes: getStoredClasses(),
-              subjects: getStoredSubjects(),
-              assignments: getStoredAssignments(),
-              timeConfig: getStoredTimeConfig(),
-              cells: getStoredScheduleCells(),
-              versions: getStoredVersions(),
-            }, user.uid, "SEED_INITIAL_DATA")
-              .then(() => {
-                updateSyncError(null, "SEED_INITIAL_DATA_SUCCESS");
-                console.log(`[FIRESTORE SEED SUCCESS] Initial data successfully seeded for uid: ${user.uid}`);
-              })
-              .catch((err) => {
-                console.error("[FIRESTORE SEED FAILED]", err);
-                updateSyncError(err?.code || err?.message || String(err), "SEED_INITIAL_DATA_FAILED");
-              })
-              .finally(() => {
-                isSeedingRef.current = false;
-              });
-          }
+          console.log(`[FIRESTORE READ SUCCESS (EMPTY)] Document not found for uid: ${user.uid}. Skipping auto-seed.`);
+          updateSyncError(null, "LOAD_FULL_STATE_EMPTY");
         }
       })
       .catch((err) => {

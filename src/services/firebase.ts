@@ -34,6 +34,26 @@ export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
+console.log("[FIREBASE CONFIG RUNTIME]", {
+  projectId: firebaseConfig.projectId,
+  authDomain: firebaseConfig.authDomain,
+  appId: firebaseConfig.appId,
+  storageBucket: firebaseConfig.storageBucket,
+  messagingSenderId: firebaseConfig.messagingSenderId,
+});
+
+console.log("[FIREBASE APP]", {
+  appName: app.name,
+  appProjectId: app.options.projectId,
+  authProjectId: auth.app.options.projectId,
+  dbProjectId: db.app.options.projectId,
+});
+
+console.log("[DATABASE INSTANCE]", {
+  databaseId: "(default)",
+  projectId: db.app.options.projectId,
+});
+
 // Google Auth Provider
 const googleProvider = new GoogleAuthProvider();
 
@@ -264,40 +284,7 @@ export async function saveFullStateToFirestore(
 
   const payloadStr = JSON.stringify(cleanFullData);
 
-  // 1) Write to teachers/{uid}
-  const teacherDocRef = doc(db, "teachers", uid);
-  await performWriteDiagnostic(
-    "setDoc",
-    "teachers",
-    uid,
-    async () => {
-      await setDoc(teacherDocRef, {
-        teachers: normalizedTeachers,
-        updatedAt,
-      }, { merge: true });
-    },
-    { teachersCount: normalizedTeachers.length },
-    `${context} -> teachers`
-  );
-
-  // 2) Write to weeklySchedules/{uid}
-  const scheduleDocRef = doc(db, "weeklySchedules", uid);
-  await performWriteDiagnostic(
-    "setDoc",
-    "weeklySchedules",
-    uid,
-    async () => {
-      await setDoc(scheduleDocRef, {
-        cells: cleanFullData.cells,
-        timeConfig: cleanFullData.timeConfig,
-        updatedAt,
-      }, { merge: true });
-    },
-    { cellsCount: cleanFullData.cells.length },
-    `${context} -> weeklySchedules`
-  );
-
-  // 3) Write full data bundle to timetable_data/{uid}
+  // Write full data bundle to timetable_data/{uid}
   const dataDocRef = doc(db, "timetable_data", uid);
   await performWriteDiagnostic(
     "setDoc",
@@ -332,6 +319,13 @@ export async function loadFullStateFromFirestore(customUid?: string) {
   }
 
   const dataPath = `timetable_data/${uid}`;
+
+  console.log("[AUTH BEFORE FIRESTORE]", {
+    currentUser: !!currentUser,
+    uid: currentUser.uid,
+    email: currentUser.email,
+    providerData: currentUser.providerData?.map(p => ({ providerId: p.providerId, uid: p.uid })),
+  });
 
   console.log(`[FIRESTORE REQUEST #${reqId} START]
 requestId: ${reqId}
