@@ -500,103 +500,32 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
     }
   };
 
+  const periodRows = [
+    { id: 'm1', label: 'T1', shift: 'morning' as PeriodShift, periodNumber: 1, isMorning: true },
+    { id: 'm2', label: 'T2', shift: 'morning' as PeriodShift, periodNumber: 2, isMorning: true },
+    { id: 'm3', label: 'T3', shift: 'morning' as PeriodShift, periodNumber: 3, isMorning: true },
+    { id: 'm4', label: 'T4', shift: 'morning' as PeriodShift, periodNumber: 4, isMorning: true },
+    { id: 'a5', label: 'T5', shift: 'afternoon' as PeriodShift, periodNumber: 1, isMorning: false },
+    { id: 'a6', label: 'T6', shift: 'afternoon' as PeriodShift, periodNumber: 2, isMorning: false },
+    { id: 'a7', label: 'T7', shift: 'afternoon' as PeriodShift, periodNumber: 3, isMorning: false },
+  ];
+
   return (
-    <div className="p-6 max-w-[1600px] mx-auto space-y-6">
-      {/* Primary Action Toolbar with Save, Status Badge, Undo, Redo, Reshuffle */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-        {/* Save Status & Last Saved Time */}
-        <div className="flex items-center gap-3">
-          {hasUnsavedChanges ? (
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold animate-pulse">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
-              <span>🟠 Có thay đổi chưa lưu</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-bold">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
-              <span>🟢 Đã lưu</span>
-            </div>
-          )}
-
-          {lastSavedAt ? (
-            <div className="text-xs text-slate-500 flex items-center gap-1.5 font-medium">
-              <Clock className="w-3.5 h-3.5 text-slate-400" />
-              <span>
-                Lưu lần cuối: <strong className="text-slate-800 font-semibold">{lastSavedAt}</strong>
-              </span>
-            </div>
-          ) : (
-            <div className="text-xs text-slate-400 font-medium">Chưa lưu lần nào</div>
-          )}
-        </div>
-
-        {/* Action Controls: Undo, Redo, Reshuffle, Save */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleUndo}
-            disabled={historyIndex <= 0}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 rounded-xl text-xs font-semibold transition-all active:scale-95"
-            title="Hoàn tác thao tác trước [↶]"
-          >
-            <Undo2 className="w-4 h-4 text-slate-600" />
-            <span>Hoàn tác</span>
-          </button>
-
-          <button
-            onClick={handleRedo}
-            disabled={historyIndex >= history.length - 1}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 rounded-xl text-xs font-semibold transition-all active:scale-95"
-            title="Làm lại thao tác vừa hoàn tác [↷]"
-          >
-            <Redo2 className="w-4 h-4 text-slate-600" />
-            <span>Làm lại</span>
-          </button>
-
-          <button
-            onClick={() => setIsReshuffleModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all active:scale-95"
-            title="Mở lại các tiết chưa khóa để xếp lại [🔄]"
-          >
-            <RotateCw className="w-4 h-4 text-slate-600" />
-            <span>Xếp lại</span>
-          </button>
-
-          <button
-            onClick={handleRunAutoSchedule}
-            className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold shadow-md transition-all active:scale-95"
-            title="Tự động xếp TKB tối ưu theo các ưu tiên & không quá 6 buổi/tuần [✨]"
-          >
-            <Sparkles className="w-4 h-4 text-amber-300 animate-spin-slow" />
-            <span>Tự động xếp TKB</span>
-          </button>
-
-          <button
-            onClick={handleSaveButtonClick}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-95 ${
-              hasUnsavedChanges
-                ? 'bg-emerald-600 hover:bg-emerald-500 text-white ring-2 ring-emerald-400/50 shadow-emerald-600/20'
-                : 'bg-emerald-700/80 hover:bg-emerald-600 text-white'
-            }`}
-          >
-            <Save className="w-4 h-4" />
-            <span>💾 LƯU TKB</span>
-          </button>
-        </div>
-      </div>
-
-      {/* View Mode Toggle & Entity Selector Bar */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-        {/* Toggle Mode Buttons */}
-        <div className="flex items-center gap-3">
+    <div className="p-3 max-w-[1700px] mx-auto h-[calc(100vh-68px)] flex flex-col space-y-3 overflow-hidden bg-slate-50/60">
+      {/* Top Action & View Switcher Bar (Compact ~60px height) */}
+      <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3 shrink-0">
+        {/* Left: View Mode Toggle & Dropdown & Stats Summary */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Mode Switcher */}
           <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold">
             <button
               onClick={() => {
                 setViewMode('class');
                 setSuggestingAssignment(null);
               }}
-              className={`px-4 py-2 rounded-lg transition-all ${
+              className={`px-3 py-1.5 rounded-lg transition-all ${
                 viewMode === 'class'
-                  ? 'bg-blue-600 text-white shadow-md'
+                  ? 'bg-blue-600 text-white shadow-sm font-bold'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -608,9 +537,9 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                 setViewMode('teacher');
                 setSuggestingAssignment(null);
               }}
-              className={`px-4 py-2 rounded-lg transition-all ${
+              className={`px-3 py-1.5 rounded-lg transition-all ${
                 viewMode === 'teacher'
-                  ? 'bg-blue-600 text-white shadow-md'
+                  ? 'bg-blue-600 text-white shadow-sm font-bold'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -618,17 +547,17 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
             </button>
           </div>
 
-          {/* Select Dropdown */}
+          {/* Entity Selector */}
           {viewMode === 'class' ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-500">Chọn lớp:</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-slate-500">Lớp:</span>
               <select
                 value={selectedClassId}
                 onChange={(e) => {
                   setSelectedClassId(e.target.value);
                   setSuggestingAssignment(null);
                 }}
-                className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                className="p-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500"
               >
                 {classes.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -638,15 +567,15 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
               </select>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-500">Chọn giáo viên:</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-slate-500">Giáo viên:</span>
               <select
                 value={selectedTeacherId}
                 onChange={(e) => {
                   setSelectedTeacherId(e.target.value);
                   setSuggestingAssignment(null);
                 }}
-                className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                className="p-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500"
               >
                 {teachers.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -656,38 +585,124 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
               </select>
             </div>
           )}
+
+          {/* Stats Summary Badge for Active Entity */}
+          {viewMode === 'teacher' && currentTeacher && (() => {
+            const assignedPeriods = workingCells.filter((c) => c.teacherId === currentTeacher.id).length;
+            const standardQuota = currentTeacher.isHomeroom ? 20 : 23;
+            const diffPeriods = assignedPeriods - standardQuota;
+            const activeSessions = getTeacherSessions(currentTeacher.id, workingCells).size;
+            const maxSessions = getTeacherMaxSessionsPerWeek(currentTeacher);
+            const isExceeded = activeSessions > maxSessions;
+
+            return (
+              <div className="flex items-center gap-2 text-xs border-l border-slate-200 pl-3">
+                <span className="text-slate-500 font-medium">Thống kê GV:</span>
+                <span className="font-bold text-slate-800">
+                  {assignedPeriods}/{standardQuota} tiết
+                  {diffPeriods > 0 && (
+                    <span className="ml-1 text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px]">
+                      Dư {diffPeriods} tiết
+                    </span>
+                  )}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                    isExceeded
+                      ? 'bg-red-100 text-red-800 border border-red-300'
+                      : activeSessions === maxSessions
+                      ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                      : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  }`}
+                >
+                  {activeSessions}/{maxSessions} buổi
+                </span>
+              </div>
+            );
+          })()}
+
+          {/* Save Status Badge */}
+          {hasUnsavedChanges ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-[11px] font-bold animate-pulse">
+              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+              <span>Có thay đổi chưa lưu</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 text-[11px] font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+              <span>Đã lưu</span>
+            </div>
+          )}
         </div>
 
-        {/* Current Entity Header Badge */}
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <div className="text-xs text-slate-500 font-medium">Đang thao tác TKB</div>
-            <div className="font-bold text-slate-900 text-base">
-              {viewMode === 'class' ? `Lớp ${currentClass?.name}` : currentTeacher?.name}
-            </div>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-            <Calendar className="w-5 h-5" />
-          </div>
+        {/* Right: Action Controls (Undo, Redo, Reshuffle, Auto, Save) */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleUndo}
+            disabled={historyIndex <= 0}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 rounded-xl text-xs font-semibold transition-all active:scale-95"
+            title="Hoàn tác thao tác trước [↶]"
+          >
+            <Undo2 className="w-3.5 h-3.5 text-slate-600" />
+            <span>Hoàn tác</span>
+          </button>
+
+          <button
+            onClick={handleRedo}
+            disabled={historyIndex >= history.length - 1}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 rounded-xl text-xs font-semibold transition-all active:scale-95"
+            title="Làm lại thao tác vừa hoàn tác [↷]"
+          >
+            <Redo2 className="w-3.5 h-3.5 text-slate-600" />
+            <span>Làm lại</span>
+          </button>
+
+          <button
+            onClick={() => setIsReshuffleModalOpen(true)}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all active:scale-95"
+            title="Mở lại các tiết chưa khóa để xếp lại [🔄]"
+          >
+            <RotateCw className="w-3.5 h-3.5 text-slate-600" />
+            <span>Xếp lại</span>
+          </button>
+
+          <button
+            onClick={handleRunAutoSchedule}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95"
+            title="Tự động xếp TKB tối ưu theo các ưu tiên & giới hạn buổi dạy"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>Tự động xếp</span>
+          </button>
+
+          <button
+            onClick={handleSaveButtonClick}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl font-bold text-xs shadow-sm transition-all active:scale-95 ${
+              hasUnsavedChanges
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white ring-2 ring-emerald-400/50 shadow-emerald-600/20'
+                : 'bg-emerald-700 hover:bg-emerald-600 text-white'
+            }`}
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>LƯU TKB</span>
+          </button>
         </div>
       </div>
 
-      {/* Main Grid + Unassigned Drawer Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-        {/* Left Column: Unassigned Assignments Tray */}
-        <div className="lg:col-span-1 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+      {/* Main Grid + Unassigned Drawer Workspace Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0 overflow-hidden">
+        {/* Left Column: Unassigned Assignments Tray (Width ~250px) */}
+        <div className="lg:col-span-3 xl:col-span-3 2xl:col-span-2.5 bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs flex flex-col min-h-0 h-full">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2 shrink-0">
             <div>
-              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+              <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1">
                 <span>Khay Tiết Chưa Xếp</span>
               </h3>
-              <p className="text-[11px] text-slate-500">
-                Kéo thẻ môn bên dưới thả vào ô TKB hoặc bấm &quot;Gợi ý&quot;
-              </p>
+              <p className="text-[10px] text-slate-500">Kéo thả môn học vào ô TKB</p>
             </div>
           </div>
 
-          <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0">
             {unassignedTrayItems.length === 0 ? (
               <div className="text-center py-6 text-xs text-slate-400">
                 Chưa có phân công chuyên môn cho đối tượng này.
@@ -711,25 +726,27 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                       setDraggedItem(null);
                       setHoveredSlot(null);
                     }}
-                    className={`p-3.5 rounded-xl border transition-all ${
+                    className={`p-2.5 rounded-xl border transition-all ${
                       isSuggesting
-                        ? 'bg-blue-50 border-blue-400 shadow-md ring-2 ring-blue-500/30'
+                        ? 'bg-blue-50 border-blue-400 shadow-sm ring-2 ring-blue-500/30'
                         : isDepleted
                         ? 'bg-slate-50 border-slate-200 opacity-60'
-                        : 'bg-white border-slate-200 hover:border-blue-300 shadow-sm hover:shadow cursor-grab active:cursor-grabbing'
+                        : 'bg-white border-slate-200 hover:border-blue-300 shadow-2xs cursor-grab active:cursor-grabbing'
                     }`}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 min-w-0">
                         <span
-                          className="w-3 h-3 rounded-full shrink-0"
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
                           style={{ backgroundColor: item.subject?.color || '#3B82F6' }}
                         />
-                        <span className="font-bold text-slate-900 text-sm">{item.subject?.name}</span>
+                        <span className="font-bold text-slate-900 text-xs truncate">
+                          {item.subject?.name}
+                        </span>
                       </div>
 
                       <span
-                        className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
                           isDepleted
                             ? 'bg-emerald-100 text-emerald-800'
                             : 'bg-blue-100 text-blue-800'
@@ -739,32 +756,32 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                       </span>
                     </div>
 
-                    <div className="text-xs text-slate-500 mt-1 flex items-center justify-between">
-                      <span>
+                    <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+                      <span className="truncate">
                         {viewMode === 'class'
                           ? `GV: ${item.teacher?.name}`
                           : `Lớp: ${item.cls?.name}`}
                       </span>
                       {item.remainingCount > 0 && (
-                        <span className="font-semibold text-blue-600">
-                          Còn {item.remainingCount} tiết
+                        <span className="font-bold text-blue-600 shrink-0 text-[10px]">
+                          Còn {item.remainingCount}
                         </span>
                       )}
                     </div>
 
-                    {/* Suggestion Button */}
+                    {/* Suggestion Toggle Button */}
                     {!isDepleted && (
-                      <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+                      <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center justify-between">
                         <button
                           onClick={() => handleToggleSuggestion(item.assignment)}
-                          className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                          className={`w-full py-1 px-2 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1 transition-all ${
                             isSuggesting
-                              ? 'bg-blue-600 text-white shadow-sm'
+                              ? 'bg-blue-600 text-white shadow-2xs'
                               : 'bg-slate-100 text-slate-700 hover:bg-blue-50 hover:text-blue-700'
                           }`}
                         >
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>{isSuggesting ? 'Tắt gợi ý vị trí' : 'Gợi ý vị trí'}</span>
+                          <Sparkles className="w-3 h-3" />
+                          <span>{isSuggesting ? 'Tắt gợi ý' : 'Gợi ý vị trí'}</span>
                         </button>
                       </div>
                     )}
@@ -775,25 +792,26 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Interactive Timetable Grid Matrix */}
-        <div className="lg:col-span-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="font-bold text-slate-900 text-base">
+        {/* Right Column: Redesigned Compact Timetable Grid Matrix */}
+        <div className="lg:col-span-9 xl:col-span-9 2xl:col-span-9.5 bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs flex flex-col min-h-0 h-full">
+          {/* Header Row above table */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2 shrink-0">
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-slate-900 text-sm">
                 {viewMode === 'class'
                   ? `BẢNG TKB LỚP ${currentClass?.name}`
                   : `BẢNG TKB - ${currentTeacher?.name}`}
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Kéo thả các môn vào từng ô tiết. Biểu tượng 🟢 = Hợp lệ, 🔴 = Xung đột/Không xếp được.
-              </p>
+              <span className="text-[11px] text-slate-500">
+                (7 tiết/ngày: 4 Sáng + 3 Chiều)
+              </span>
             </div>
 
             {suggestingAssignment && (
-              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl text-xs font-medium text-blue-900">
-                <Sparkles className="w-4 h-4 text-blue-600 animate-pulse" />
+              <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-xl text-xs font-medium text-blue-900">
+                <Sparkles className="w-3.5 h-3.5 text-blue-600 animate-pulse" />
                 <span>
-                  Đang gợi ý cho môn:{' '}
+                  Đang gợi ý:{' '}
                   <b>{subjects.find((s) => s.id === suggestingAssignment.subjectId)?.name}</b>
                 </span>
                 <button
@@ -803,435 +821,254 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                   }}
                   className="p-0.5 hover:bg-blue-200 rounded text-blue-700"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-3 h-3" />
                 </button>
               </div>
             )}
           </div>
 
-          {/* Matrix Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-center border-collapse text-xs">
+          {/* Matrix Table Container - Scrollable internal table if needed */}
+          <div className="flex-1 overflow-auto rounded-xl border border-slate-200 bg-slate-50/20 min-h-0">
+            <table className="w-full text-center border-collapse text-xs table-fixed">
               <thead>
-                <tr className="bg-slate-900 text-white font-bold border-b border-slate-800">
-                  <th className="p-3 border-r border-slate-800 w-24">Buổi / Tiết</th>
+                <tr className="bg-slate-900 text-white font-bold border-b border-slate-800 sticky top-0 z-20 h-10">
+                  <th className="p-2 border-r border-slate-800 w-20 text-[11px] uppercase tracking-wider">
+                    TIẾT
+                  </th>
                   {days.map((day) => (
-                    <th key={day} className="p-3 border-r border-slate-800 min-w-[130px]">
+                    <th key={day} className="p-2 border-r border-slate-800 font-bold text-xs">
                       THỨ {day.replace('T', '')}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {/* Morning Section */}
-                <tr className="bg-blue-100/70 font-bold text-blue-900 text-left">
-                  <td colSpan={6} className="px-3 py-1.5 text-[11px] uppercase tracking-wider">
-                    BUỔI SÁNG
-                  </td>
-                </tr>
+                {periodRows.map((row, rIdx) => {
+                  const isAfternoonFirstRow = rIdx === 4; // Right before T5
 
-                {[1, 2, 3, 4, 5].map((pNum) => (
-                  <tr key={`m_${pNum}`} className="border-b border-slate-200 hover:bg-slate-50/50">
-                    <td className="p-3 font-bold text-slate-700 border-r border-slate-200 bg-slate-50/80">
-                      TIẾT {pNum}
-                    </td>
+                  return (
+                    <React.Fragment key={row.id}>
+                      {/* Slim Afternoon Divider Bar (Height ~26px) */}
+                      {isAfternoonFirstRow && (
+                        <tr className="bg-gradient-to-r from-amber-50 via-amber-100/70 to-amber-50 text-amber-900 font-bold border-y border-amber-200 text-center h-7">
+                          <td className="font-mono text-[10px] tracking-wider uppercase bg-amber-200/60 text-amber-950 border-r border-amber-300">
+                            CHIỀU
+                          </td>
+                          <td colSpan={days.length} className="text-[11px] tracking-widest uppercase font-semibold py-1">
+                            🌤 BUỔI CHIỀU (TIẾT 5 – TIẾT 7)
+                          </td>
+                        </tr>
+                      )}
 
-                    {days.map((day) => {
-                      const shift: PeriodShift = 'morning';
+                      <tr className="border-b border-slate-200 hover:bg-slate-50/50 h-[56px]">
+                        {/* Period Column Label */}
+                        <td className="p-1 font-bold text-slate-800 border-r border-slate-200 bg-slate-100/80 text-center">
+                          <div className="text-xs font-black text-slate-900">{row.label}</div>
+                          <div className="text-[9px] text-slate-500 font-normal">
+                            {row.isMorning ? 'Sáng' : 'Chiều'}
+                          </div>
+                        </td>
 
-                      // Find scheduled cell for current entity at this slot in workingCells
-                      const cellInSlot = workingCells.find((c) => {
-                        if (viewMode === 'class') {
-                          return (
-                            c.classId === selectedClassId &&
-                            c.day === day &&
-                            c.shift === shift &&
-                            c.periodNumber === pNum
+                        {/* Day Cells */}
+                        {days.map((day) => {
+                          const shift: PeriodShift = row.shift;
+                          const pNum = row.periodNumber;
+
+                          // Find cell in slot (matching both periodNumber 1..3 and 5..7 for afternoon)
+                          const cellInSlot = workingCells.find((c) => {
+                            const matchShift = c.shift === shift;
+                            const matchPeriod =
+                              c.periodNumber === pNum ||
+                              (shift === 'afternoon' && c.periodNumber === pNum + 4);
+                            if (!matchShift || !matchPeriod) return false;
+
+                            return viewMode === 'class'
+                              ? c.classId === selectedClassId
+                              : c.teacherId === selectedTeacherId;
+                          });
+
+                          const subject = cellInSlot
+                            ? subjects.find((s) => s.id === cellInSlot.subjectId)
+                            : null;
+                          const teacher = cellInSlot
+                            ? teachers.find((t) => t.id === cellInSlot.teacherId)
+                            : null;
+                          const cls = cellInSlot
+                            ? classes.find((c) => c.id === cellInSlot.classId)
+                            : null;
+
+                          // Check suggestion
+                          const suggestion = suggestions.find(
+                            (s) =>
+                              s.day === day &&
+                              s.shift === shift &&
+                              (s.periodNumber === pNum || (shift === 'afternoon' && s.periodNumber === pNum + 4))
                           );
-                        } else {
-                          return (
-                            c.teacherId === selectedTeacherId &&
-                            c.day === day &&
-                            c.shift === shift &&
-                            c.periodNumber === pNum
+
+                          // Check disabled slot
+                          const isDisabledSchool = timeConfig.disabledSlots.some(
+                            (d) =>
+                              d.day === day &&
+                              d.shift === shift &&
+                              (d.periodNumber === pNum || (shift === 'afternoon' && d.periodNumber === pNum + 4))
                           );
-                        }
-                      });
 
-                      const subject = cellInSlot
-                        ? subjects.find((s) => s.id === cellInSlot.subjectId)
-                        : null;
-                      const teacher = cellInSlot
-                        ? teachers.find((t) => t.id === cellInSlot.teacherId)
-                        : null;
-                      const cls = cellInSlot
-                        ? classes.find((c) => c.id === cellInSlot.classId)
-                        : null;
+                          const isHovered =
+                            hoveredSlot?.day === day &&
+                            hoveredSlot?.shift === shift &&
+                            hoveredSlot?.periodNumber === pNum;
 
-                      // Check suggestion status if active
-                      const suggestion = suggestions.find(
-                        (s) => s.day === day && s.shift === shift && s.periodNumber === pNum
-                      );
-
-                      // Check if slot disabled by school
-                      const isDisabledSchool = timeConfig.disabledSlots.some(
-                        (d) => d.day === day && d.shift === shift && d.periodNumber === pNum
-                      );
-
-                      const isHovered =
-                        hoveredSlot?.day === day &&
-                        hoveredSlot?.shift === shift &&
-                        hoveredSlot?.periodNumber === pNum;
-
-                      return (
-                        <td
-                          key={day}
-                          onDragOver={(e) => {
-                            e.preventDefault();
-                            setHoveredSlot({ day, shift, periodNumber: pNum });
-                          }}
-                          onDragLeave={() => setHoveredSlot(null)}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            setHoveredSlot(null);
-                            if (draggedItem) {
-                              placeAssignmentIntoSlot(
-                                draggedItem.assignmentId,
-                                day,
-                                shift,
-                                pNum,
-                                draggedItem.sourceCellId
-                              );
-                            }
-                          }}
-                          className={`p-1.5 border-r border-slate-200 align-top transition-all min-h-[75px] ${
-                            isDisabledSchool
-                              ? 'bg-slate-100 text-slate-400'
-                              : isHovered
-                              ? 'bg-blue-100/80 ring-2 ring-blue-500'
-                              : suggestion
-                              ? suggestion.isValid
-                                ? 'bg-emerald-50/80 ring-2 ring-emerald-400'
-                                : 'bg-red-50/50'
-                              : ''
-                          }`}
-                        >
-                          {isDisabledSchool ? (
-                            <div className="py-4 text-[10px] text-slate-400 font-semibold uppercase">
-                              Trường tắt
-                            </div>
-                          ) : cellInSlot ? (
-                            <div
-                              draggable={!cellInSlot.isLocked}
-                              onDragStart={() => {
-                                setDraggedItem({
-                                  type: 'cell',
-                                  assignmentId: cellInSlot.assignmentId,
-                                  sourceCellId: cellInSlot.id,
-                                });
+                          return (
+                            <td
+                              key={day}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                setHoveredSlot({ day, shift, periodNumber: pNum });
                               }}
-                              onDragEnd={() => {
-                                setDraggedItem(null);
+                              onDragLeave={() => setHoveredSlot(null)}
+                              onDrop={(e) => {
+                                e.preventDefault();
                                 setHoveredSlot(null);
-                              }}
-                              className={`p-2.5 rounded-xl border text-left shadow-sm relative group transition-all ${
-                                cellInSlot.isLocked
-                                  ? 'bg-amber-50 border-amber-300'
-                                  : 'bg-white border-slate-300 hover:border-blue-400 hover:shadow cursor-grab active:cursor-grabbing'
-                              }`}
-                              style={{
-                                borderLeftWidth: '5px',
-                                borderLeftColor: subject?.color || '#2563EB',
-                              }}
-                            >
-                              <div className="flex items-start justify-between gap-1">
-                                <span className="font-bold text-slate-900 text-xs leading-snug">
-                                  {subject?.name}
-                                </span>
-                                {cellInSlot.isLocked && (
-                                  <span className="text-amber-700 shrink-0" title="Ô này đã bị khóa">
-                                    <Lock className="w-3 h-3" />
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="text-[11px] text-slate-600 mt-1 font-medium">
-                                {viewMode === 'class' ? teacher?.name : `Lớp ${cls?.name}`}
-                              </div>
-
-                              {/* Hover Cell Action buttons */}
-                              <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-white/90 rounded-md p-0.5 shadow border border-slate-200">
-                                <button
-                                  onClick={() => handleToggleLockCell(cellInSlot.id)}
-                                  className={`p-1 rounded hover:bg-slate-100 ${
-                                    cellInSlot.isLocked
-                                      ? 'text-amber-700 font-bold'
-                                      : 'text-slate-500'
-                                  }`}
-                                  title={cellInSlot.isLocked ? 'Mở khóa ô này' : 'Khóa ô này'}
-                                >
-                                  {cellInSlot.isLocked ? (
-                                    <Unlock className="w-3 h-3" />
-                                  ) : (
-                                    <Lock className="w-3 h-3" />
-                                  )}
-                                </button>
-                                {!cellInSlot.isLocked && (
-                                  <button
-                                    onClick={() => handleDeleteCell(cellInSlot.id)}
-                                    className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
-                                    title="Xóa tiết khỏi TKB"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          ) : suggestion ? (
-                            <button
-                              onClick={() => {
-                                if (suggestingAssignment && suggestion.isValid) {
+                                if (draggedItem) {
                                   placeAssignmentIntoSlot(
-                                    suggestingAssignment.id,
+                                    draggedItem.assignmentId,
                                     day,
                                     shift,
-                                    pNum
+                                    pNum,
+                                    draggedItem.sourceCellId
                                   );
                                 }
                               }}
-                              disabled={!suggestion.isValid}
-                              className={`w-full h-full min-h-[55px] p-2 rounded-xl text-left border flex flex-col justify-between transition-all ${
-                                suggestion.isValid
-                                  ? 'bg-emerald-100/60 border-emerald-300 text-emerald-900 hover:bg-emerald-200/80 cursor-pointer shadow-sm'
-                                  : 'bg-red-50/70 border-red-200 text-red-800 cursor-not-allowed opacity-80'
+                              className={`p-1 border-r border-slate-200 align-middle transition-all h-[56px] ${
+                                isDisabledSchool
+                                  ? 'bg-slate-100 text-slate-400'
+                                  : isHovered
+                                  ? 'bg-blue-100/90 ring-2 ring-blue-500'
+                                  : suggestion
+                                  ? suggestion.isValid
+                                    ? 'bg-emerald-50 ring-2 ring-emerald-400'
+                                    : 'bg-red-50/60'
+                                  : ''
                               }`}
                             >
-                              <div className="flex items-center gap-1 font-bold text-[11px]">
-                                {suggestion.isValid ? (
-                                  <span className="text-emerald-700">🟢 Xếp vào đây</span>
-                                ) : (
-                                  <span className="text-red-700">🔴 Không thể xếp</span>
-                                )}
-                              </div>
-                              {!suggestion.isValid && suggestion.reason && (
-                                <div className="text-[10px] text-red-600 mt-1 leading-tight font-sans">
-                                  {suggestion.reason}
+                              {isDisabledSchool ? (
+                                <div className="text-[10px] text-slate-400 font-semibold uppercase text-center">
+                                  Trường tắt
                                 </div>
-                              )}
-                            </button>
-                          ) : (
-                            <div className="h-full min-h-[55px] flex items-center justify-center text-[11px] text-slate-300 hover:text-slate-400 border border-dashed border-slate-200 rounded-xl hover:bg-slate-50/50">
-                              Trống
-                            </div>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-
-                {/* Afternoon Section */}
-                <tr className="bg-amber-100/70 font-bold text-amber-900 text-left">
-                  <td colSpan={6} className="px-3 py-1.5 text-[11px] uppercase tracking-wider">
-                    BUỔI CHIỀU
-                  </td>
-                </tr>
-
-                {[1, 2, 3, 4, 5].map((pNum) => (
-                  <tr key={`a_${pNum}`} className="border-b border-slate-200 hover:bg-slate-50/50">
-                    <td className="p-3 font-bold text-slate-700 border-r border-slate-200 bg-slate-50/80">
-                      TIẾT {pNum}
-                    </td>
-
-                    {days.map((day) => {
-                      const shift: PeriodShift = 'afternoon';
-
-                      const cellInSlot = workingCells.find((c) => {
-                        if (viewMode === 'class') {
-                          return (
-                            c.classId === selectedClassId &&
-                            c.day === day &&
-                            c.shift === shift &&
-                            c.periodNumber === pNum
-                          );
-                        } else {
-                          return (
-                            c.teacherId === selectedTeacherId &&
-                            c.day === day &&
-                            c.shift === shift &&
-                            c.periodNumber === pNum
-                          );
-                        }
-                      });
-
-                      const subject = cellInSlot
-                        ? subjects.find((s) => s.id === cellInSlot.subjectId)
-                        : null;
-                      const teacher = cellInSlot
-                        ? teachers.find((t) => t.id === cellInSlot.teacherId)
-                        : null;
-                      const cls = cellInSlot
-                        ? classes.find((c) => c.id === cellInSlot.classId)
-                        : null;
-
-                      const suggestion = suggestions.find(
-                        (s) => s.day === day && s.shift === shift && s.periodNumber === pNum
-                      );
-
-                      const isDisabledSchool = timeConfig.disabledSlots.some(
-                        (d) => d.day === day && d.shift === shift && d.periodNumber === pNum
-                      );
-
-                      const isHovered =
-                        hoveredSlot?.day === day &&
-                        hoveredSlot?.shift === shift &&
-                        hoveredSlot?.periodNumber === pNum;
-
-                      return (
-                        <td
-                          key={day}
-                          onDragOver={(e) => {
-                            e.preventDefault();
-                            setHoveredSlot({ day, shift, periodNumber: pNum });
-                          }}
-                          onDragLeave={() => setHoveredSlot(null)}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            setHoveredSlot(null);
-                            if (draggedItem) {
-                              placeAssignmentIntoSlot(
-                                draggedItem.assignmentId,
-                                day,
-                                shift,
-                                pNum,
-                                draggedItem.sourceCellId
-                              );
-                            }
-                          }}
-                          className={`p-1.5 border-r border-slate-200 align-top transition-all min-h-[75px] ${
-                            isDisabledSchool
-                              ? 'bg-slate-100 text-slate-400'
-                              : isHovered
-                              ? 'bg-blue-100/80 ring-2 ring-blue-500'
-                              : suggestion
-                              ? suggestion.isValid
-                                ? 'bg-emerald-50/80 ring-2 ring-emerald-400'
-                                : 'bg-red-50/50'
-                              : ''
-                          }`}
-                        >
-                          {isDisabledSchool ? (
-                            <div className="py-4 text-[10px] text-slate-400 font-semibold uppercase">
-                              Trường tắt
-                            </div>
-                          ) : cellInSlot ? (
-                            <div
-                              draggable={!cellInSlot.isLocked}
-                              onDragStart={() => {
-                                setDraggedItem({
-                                  type: 'cell',
-                                  assignmentId: cellInSlot.assignmentId,
-                                  sourceCellId: cellInSlot.id,
-                                });
-                              }}
-                              onDragEnd={() => {
-                                setDraggedItem(null);
-                                setHoveredSlot(null);
-                              }}
-                              className={`p-2.5 rounded-xl border text-left shadow-sm relative group transition-all ${
-                                cellInSlot.isLocked
-                                  ? 'bg-amber-50 border-amber-300'
-                                  : 'bg-white border-slate-300 hover:border-blue-400 hover:shadow cursor-grab active:cursor-grabbing'
-                              }`}
-                              style={{
-                                borderLeftWidth: '5px',
-                                borderLeftColor: subject?.color || '#2563EB',
-                              }}
-                            >
-                              <div className="flex items-start justify-between gap-1">
-                                <span className="font-bold text-slate-900 text-xs leading-snug">
-                                  {subject?.name}
-                                </span>
-                                {cellInSlot.isLocked && (
-                                  <span className="text-amber-700 shrink-0" title="Ô này đã bị khóa">
-                                    <Lock className="w-3 h-3" />
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="text-[11px] text-slate-600 mt-1 font-medium">
-                                {viewMode === 'class' ? teacher?.name : `Lớp ${cls?.name}`}
-                              </div>
-
-                              <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-white/90 rounded-md p-0.5 shadow border border-slate-200">
-                                <button
-                                  onClick={() => handleToggleLockCell(cellInSlot.id)}
-                                  className={`p-1 rounded hover:bg-slate-100 ${
+                              ) : cellInSlot ? (
+                                <div
+                                  draggable={!cellInSlot.isLocked}
+                                  onDragStart={() => {
+                                    setDraggedItem({
+                                      type: 'cell',
+                                      assignmentId: cellInSlot.assignmentId,
+                                      sourceCellId: cellInSlot.id,
+                                    });
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggedItem(null);
+                                    setHoveredSlot(null);
+                                  }}
+                                  title={`Môn: ${subject?.name || ''}\nLớp: ${cls?.name || ''}\nGiáo viên: ${teacher?.name || ''}\nBuổi: ${shift === 'morning' ? 'Sáng' : 'Chiều'} - Tiết ${row.label}\nTrạng thái: ${cellInSlot.isLocked ? '🔒 Đã khóa' : '🟢 Hợp lệ'}`}
+                                  className={`h-[48px] px-2 py-1 rounded-lg border text-left shadow-2xs relative group transition-all flex flex-col justify-between ${
                                     cellInSlot.isLocked
-                                      ? 'text-amber-700 font-bold'
-                                      : 'text-slate-500'
+                                      ? 'bg-amber-50/90 border-amber-300'
+                                      : 'bg-white border-slate-300 hover:border-blue-400 hover:shadow cursor-grab active:cursor-grabbing'
                                   }`}
-                                  title={cellInSlot.isLocked ? 'Mở khóa ô này' : 'Khóa ô này'}
+                                  style={{
+                                    borderLeftWidth: '4px',
+                                    borderLeftColor: subject?.color || '#2563EB',
+                                  }}
                                 >
-                                  {cellInSlot.isLocked ? (
-                                    <Unlock className="w-3 h-3" />
-                                  ) : (
-                                    <Lock className="w-3 h-3" />
+                                  {/* Line 1: Subject Name */}
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="font-bold text-slate-900 text-[12px] leading-tight truncate">
+                                      {subject?.name}
+                                    </span>
+                                    {cellInSlot.isLocked && (
+                                      <span className="text-amber-700 shrink-0" title="Ô này đã bị khóa">
+                                        <Lock className="w-3 h-3" />
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Line 2: Class or Teacher Name */}
+                                  <div className="text-[11px] text-slate-600 font-medium leading-tight truncate">
+                                    {viewMode === 'class' ? teacher?.name : `Lớp ${cls?.name}`}
+                                  </div>
+
+                                  {/* Hover Cell Action buttons */}
+                                  <div className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-white/95 rounded p-0.5 shadow border border-slate-200 z-10">
+                                    <button
+                                      onClick={() => handleToggleLockCell(cellInSlot.id)}
+                                      className={`p-0.5 rounded hover:bg-slate-100 ${
+                                        cellInSlot.isLocked
+                                          ? 'text-amber-700 font-bold'
+                                          : 'text-slate-500'
+                                      }`}
+                                      title={cellInSlot.isLocked ? 'Mở khóa ô này' : 'Khóa ô này'}
+                                    >
+                                      {cellInSlot.isLocked ? (
+                                        <Unlock className="w-3 h-3" />
+                                      ) : (
+                                        <Lock className="w-3 h-3" />
+                                      )}
+                                    </button>
+                                    {!cellInSlot.isLocked && (
+                                      <button
+                                        onClick={() => handleDeleteCell(cellInSlot.id)}
+                                        className="p-0.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
+                                        title="Xóa tiết khỏi TKB"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : suggestion ? (
+                                <button
+                                  onClick={() => {
+                                    if (suggestingAssignment && suggestion.isValid) {
+                                      placeAssignmentIntoSlot(
+                                        suggestingAssignment.id,
+                                        day,
+                                        shift,
+                                        pNum
+                                      );
+                                    }
+                                  }}
+                                  disabled={!suggestion.isValid}
+                                  className={`w-full h-[48px] p-1 rounded-lg text-left border flex flex-col justify-between transition-all ${
+                                    suggestion.isValid
+                                      ? 'bg-emerald-100/70 border-emerald-300 text-emerald-900 hover:bg-emerald-200 cursor-pointer shadow-2xs'
+                                      : 'bg-red-50/80 border-red-200 text-red-800 cursor-not-allowed opacity-80'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-1 font-bold text-[10px]">
+                                    {suggestion.isValid ? (
+                                      <span className="text-emerald-800">🟢 Xếp vào đây</span>
+                                    ) : (
+                                      <span className="text-red-700">🔴 Không thể xếp</span>
+                                    )}
+                                  </div>
+                                  {!suggestion.isValid && suggestion.reason && (
+                                    <div className="text-[9px] text-red-600 leading-tight truncate">
+                                      {suggestion.reason}
+                                    </div>
                                   )}
                                 </button>
-                                {!cellInSlot.isLocked && (
-                                  <button
-                                    onClick={() => handleDeleteCell(cellInSlot.id)}
-                                    className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
-                                    title="Xóa tiết khỏi TKB"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          ) : suggestion ? (
-                            <button
-                              onClick={() => {
-                                if (suggestingAssignment && suggestion.isValid) {
-                                  placeAssignmentIntoSlot(
-                                    suggestingAssignment.id,
-                                    day,
-                                    shift,
-                                    pNum
-                                  );
-                                }
-                              }}
-                              disabled={!suggestion.isValid}
-                              className={`w-full h-full min-h-[55px] p-2 rounded-xl text-left border flex flex-col justify-between transition-all ${
-                                suggestion.isValid
-                                  ? 'bg-emerald-100/60 border-emerald-300 text-emerald-900 hover:bg-emerald-200/80 cursor-pointer shadow-sm'
-                                  : 'bg-red-50/70 border-red-200 text-red-800 cursor-not-allowed opacity-80'
-                              }`}
-                            >
-                              <div className="flex items-center gap-1 font-bold text-[11px]">
-                                {suggestion.isValid ? (
-                                  <span className="text-emerald-700">🟢 Xếp vào đây</span>
-                                ) : (
-                                  <span className="text-red-700">🔴 Không thể xếp</span>
-                                )}
-                              </div>
-                              {!suggestion.isValid && suggestion.reason && (
-                                <div className="text-[10px] text-red-600 mt-1 leading-tight font-sans">
-                                  {suggestion.reason}
+                              ) : (
+                                <div className="h-[48px] flex items-center justify-center text-[10px] text-slate-300 hover:text-slate-500 border border-dashed border-slate-200 rounded-lg hover:bg-slate-50/80 transition-colors cursor-pointer">
+                                  + Trống
                                 </div>
                               )}
-                            </button>
-                          ) : (
-                            <div className="h-full min-h-[55px] flex items-center justify-center text-[11px] text-slate-300 hover:text-slate-400 border border-dashed border-slate-200 rounded-xl hover:bg-slate-50/50">
-                              Trống
-                            </div>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1249,7 +1086,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
               <div>
                 <h3 className="font-bold text-slate-900 text-base">LƯU THỜI KHÓA BIỂU</h3>
                 <p className="text-xs text-emerald-700 font-semibold mt-0.5">
-                  TKB không có lỗi.
+                  TKB hợp lệ, không có lỗi.
                 </p>
               </div>
             </div>
@@ -1290,7 +1127,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                 <div>
                   <h3 className="font-bold text-slate-900 text-base">⚠️ KHÔNG THỂ LƯU TKB</h3>
                   <p className="text-xs text-red-600 font-semibold mt-0.5">
-                    Phát hiện {validationErrors.length} lỗi:
+                    Phát hiện {validationErrors.length} lỗi xung đột:
                   </p>
                 </div>
               </div>
@@ -1400,7 +1237,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                   {autoScheduleResult.statsSummary.teachersWithinSessions}/{autoScheduleResult.statsSummary.totalTeachers}
                 </div>
                 <div className="text-[11px] font-bold text-emerald-800 mt-0.5">
-                  🟢 Không vượt 6 buổi
+                  🟢 Không vượt giới hạn buổi
                 </div>
               </div>
 
@@ -1418,7 +1255,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                   {autoScheduleResult.statsSummary.teachersExceededSessions}
                 </div>
                 <div className="text-[11px] font-bold text-red-800 mt-0.5">
-                  🔴 Vượt 6 buổi (Lỗi)
+                  🔴 Vượt số buổi tối đa
                 </div>
               </div>
 
@@ -1427,7 +1264,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                   {autoScheduleResult.statsSummary.teachersExceededPeriods}
                 </div>
                 <div className="text-[11px] font-bold text-purple-800 mt-0.5">
-                  🟠 Dư định mức (20/23)
+                  🟠 Dư định mức tiết
                 </div>
               </div>
             </div>
@@ -1459,7 +1296,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
             ) : (
               <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Hoàn hảo! Đã phân bổ 100% tất cả các tiết học mà không phát sinh lỗi trùng lịch hay vượt 6 buổi/tuần!</span>
+                <span>Hoàn hảo! Đã phân bổ 100% tất cả các tiết học mà không phát sinh lỗi trùng lịch hay vượt giới hạn buổi dạy!</span>
               </div>
             )}
 
