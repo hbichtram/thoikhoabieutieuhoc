@@ -160,7 +160,7 @@ export default function App() {
               timeConfig: getStoredTimeConfig(),
               cells: getStoredScheduleCells(),
               versions: getStoredVersions(),
-            }, user.uid)
+            }, user.uid, "SEED_INITIAL_DATA")
               .then(() => {
                 setSyncError(null);
                 console.log(`[FIRESTORE SEED SUCCESS] Initial data successfully seeded for uid: ${user.uid}`);
@@ -194,15 +194,18 @@ export default function App() {
   useEffect(() => { setStoredVersions(versions); }, [versions]);
 
   // Helper function to sync current state to Firestore
-  const syncToFirestore = useCallback(async (overrides?: {
-    teachers?: Teacher[];
-    classes?: ClassItem[];
-    subjects?: Subject[];
-    assignments?: Assignment[];
-    timeConfig?: TimeConfig;
-    cells?: ScheduleCell[];
-    versions?: ScheduleVersion[];
-  }) => {
+  const syncToFirestore = useCallback(async (
+    overrides?: {
+      teachers?: Teacher[];
+      classes?: ClassItem[];
+      subjects?: Subject[];
+      assignments?: Assignment[];
+      timeConfig?: TimeConfig;
+      cells?: ScheduleCell[];
+      versions?: ScheduleVersion[];
+    },
+    context: string = "SYNC_TO_FIRESTORE"
+  ) => {
     const activeAuthUser = auth.currentUser;
     if (!authReady || !user || !activeAuthUser || activeAuthUser.uid !== user.uid) {
       console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng hoặc chưa Auth Ready. Bỏ qua ghi Firestore.", {
@@ -225,14 +228,14 @@ export default function App() {
         versions: overrides?.versions ?? versions,
       };
 
-      await saveFullStateToFirestore(fullData, user.uid);
+      await saveFullStateToFirestore(fullData, user.uid, context);
       setSyncError(null);
-      console.log(`[FIRESTORE WRITE SUCCESS] for uid: ${user.uid}`);
+      console.log(`[FIRESTORE WRITE SUCCESS] (${context}) for uid: ${user.uid}`);
     } catch (error: any) {
       const errMsg = error?.code || error?.message || String(error);
       setSyncError(errMsg);
-      console.error("[FIRESTORE WRITE ERROR]:", error);
-      alert(`⚠️ Lỗi ghi Firestore: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[FIRESTORE WRITE ERROR] (${context}):`, error);
+      alert(`⚠️ Lỗi ghi Firestore [${context}]: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsSyncing(false);
     }
@@ -254,14 +257,14 @@ export default function App() {
     const norm = normalizeTeacher(newTeacher);
     const next = [...teachers, norm];
     setTeachers(next);
-    await syncToFirestore({ teachers: next });
+    await syncToFirestore({ teachers: next }, "ADD_TEACHER");
   };
 
   const handleUpdateTeacher = async (updatedTeacher: Teacher) => {
     const norm = normalizeTeacher(updatedTeacher);
     const next = teachers.map((t) => (t.id === norm.id ? norm : t));
     setTeachers(next);
-    await syncToFirestore({ teachers: next });
+    await syncToFirestore({ teachers: next }, "UPDATE_TEACHER");
   };
 
   const handleDeleteTeacher = async (id: string) => {
@@ -288,26 +291,26 @@ export default function App() {
       classes: nextClasses,
       assignments: nextAssignments,
       cells: nextCells,
-    });
+    }, "DELETE_TEACHER");
   };
 
   const handleBatchSetTeachers = async (newTeachers: Teacher[]) => {
     const normList = newTeachers.map((t) => normalizeTeacher(t));
     setTeachers(normList);
-    await syncToFirestore({ teachers: normList });
+    await syncToFirestore({ teachers: normList }, "BATCH_SET_TEACHERS");
   };
 
   // Handlers for Classes
   const handleAddClass = async (newClass: ClassItem) => {
     const next = [...classes, newClass];
     setClasses(next);
-    await syncToFirestore({ classes: next });
+    await syncToFirestore({ classes: next }, "ADD_CLASS");
   };
 
   const handleUpdateClass = async (updatedClass: ClassItem) => {
     const next = classes.map((c) => (c.id === updatedClass.id ? updatedClass : c));
     setClasses(next);
-    await syncToFirestore({ classes: next });
+    await syncToFirestore({ classes: next }, "UPDATE_CLASS");
   };
 
   const handleDeleteClass = async (id: string) => {
@@ -315,20 +318,20 @@ export default function App() {
     const nextTeachers = teachers.map((t) => (t.homeroomClassId === id ? normalizeTeacher({ ...t, homeroomClassId: '' }) : t));
     setClasses(nextClasses);
     setTeachers(nextTeachers);
-    await syncToFirestore({ classes: nextClasses, teachers: nextTeachers });
+    await syncToFirestore({ classes: nextClasses, teachers: nextTeachers }, "DELETE_CLASS");
   };
 
   // Handlers for Subjects
   const handleAddSubject = async (newSubject: Subject) => {
     const next = [...subjects, newSubject];
     setSubjects(next);
-    await syncToFirestore({ subjects: next });
+    await syncToFirestore({ subjects: next }, "ADD_SUBJECT");
   };
 
   const handleUpdateSubject = async (updatedSubject: Subject) => {
     const next = subjects.map((s) => (s.id === updatedSubject.id ? updatedSubject : s));
     setSubjects(next);
-    await syncToFirestore({ subjects: next });
+    await syncToFirestore({ subjects: next }, "UPDATE_SUBJECT");
   };
 
   const handleDeleteSubject = async (id: string) => {
@@ -339,7 +342,7 @@ export default function App() {
       setSubjects(nextSubjects);
       setAssignments(nextAssignments);
       setCells(nextCells);
-      await syncToFirestore({ subjects: nextSubjects, assignments: nextAssignments, cells: nextCells });
+      await syncToFirestore({ subjects: nextSubjects, assignments: nextAssignments, cells: nextCells }, "DELETE_SUBJECT");
     }
   };
 
@@ -347,13 +350,13 @@ export default function App() {
   const handleAddAssignment = async (newAssignment: Assignment) => {
     const next = [...assignments, newAssignment];
     setAssignments(next);
-    await syncToFirestore({ assignments: next });
+    await syncToFirestore({ assignments: next }, "ADD_ASSIGNMENT");
   };
 
   const handleUpdateAssignment = async (updatedAssignment: Assignment) => {
     const next = assignments.map((a) => (a.id === updatedAssignment.id ? updatedAssignment : a));
     setAssignments(next);
-    await syncToFirestore({ assignments: next });
+    await syncToFirestore({ assignments: next }, "UPDATE_ASSIGNMENT");
   };
 
   const handleDeleteAssignment = async (id: string) => {
@@ -361,12 +364,12 @@ export default function App() {
     const nextCells = cells.filter((c) => c.assignmentId !== id);
     setAssignments(nextAssignments);
     setCells(nextCells);
-    await syncToFirestore({ assignments: nextAssignments, cells: nextCells });
+    await syncToFirestore({ assignments: nextAssignments, cells: nextCells }, "DELETE_ASSIGNMENT");
   };
 
   const handleBatchSetAssignments = async (newAssignments: Assignment[]) => {
     setAssignments(newAssignments);
-    await syncToFirestore({ assignments: newAssignments });
+    await syncToFirestore({ assignments: newAssignments }, "BATCH_SET_ASSIGNMENTS");
   };
 
   // Handlers for Versioning
@@ -389,8 +392,8 @@ export default function App() {
 
     if (user) {
       try {
-        await saveTimetableVersionToFirestore(newVersion, user.uid);
-        await syncToFirestore({ versions: nextVersions });
+        await saveTimetableVersionToFirestore(newVersion, user.uid, "SAVE_TIMETABLE_VERSION");
+        await syncToFirestore({ versions: nextVersions }, "SAVE_QUICK_VERSION");
         console.log(`[FIRESTORE] WRITE SUCCESS: TimetableVersion ${newVersion.id} saved to Firestore.`);
       } catch (err) {
         console.error("[FIRESTORE] WRITE ERROR for TimetableVersion:", err);
@@ -404,7 +407,7 @@ export default function App() {
 
   const handleRestoreVersion = async (ver: ScheduleVersion) => {
     setCells(ver.cells);
-    await syncToFirestore({ cells: ver.cells });
+    await syncToFirestore({ cells: ver.cells }, "RESTORE_VERSION");
     alert(`Đã khôi phục thành công bản TKB: ${ver.name}`);
   };
 
@@ -412,8 +415,8 @@ export default function App() {
     const nextVersions = versions.filter((v) => v.id !== versionId);
     setVersions(nextVersions);
     if (user) {
-      await deleteTimetableVersionFromFirestore(versionId, user.uid);
-      await syncToFirestore({ versions: nextVersions });
+      await deleteTimetableVersionFromFirestore(versionId, user.uid, "DELETE_TIMETABLE_VERSION");
+      await syncToFirestore({ versions: nextVersions }, "DELETE_VERSION");
     }
   };
 
@@ -443,7 +446,7 @@ export default function App() {
       timeConfig: tc,
       cells: sc,
       versions: v,
-    });
+    }, "RESET_SAMPLE_DATA");
   };
 
   // Google Login Handler
@@ -577,7 +580,7 @@ export default function App() {
               timeConfig={timeConfig}
               onUpdateCells={async (newCells) => {
                 setCells(newCells);
-                await syncToFirestore({ cells: newCells });
+                await syncToFirestore({ cells: newCells }, "UPDATE_CELLS");
               }}
               onHasUnsavedChangesChange={setHasUnsavedScheduleChanges}
             />
@@ -613,7 +616,7 @@ export default function App() {
               currentCells={cells}
               onUpdateTimeConfig={async (newConfig) => {
                 setTimeConfig(newConfig);
-                await syncToFirestore({ timeConfig: newConfig });
+                await syncToFirestore({ timeConfig: newConfig }, "UPDATE_TIME_CONFIG");
               }}
               onSaveVersion={(name, type, notes) => handleSaveQuickVersion(name, type, notes)}
               onRestoreVersion={handleRestoreVersion}

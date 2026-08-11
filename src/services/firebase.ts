@@ -76,7 +76,8 @@ export async function performWriteDiagnostic(
   collectionName: string,
   docId: string,
   writeFn: () => Promise<void>,
-  dataSummary?: any
+  dataSummary?: any,
+  context: string = "UNKNOWN_CONTEXT"
 ): Promise<boolean> {
   const currentUser = auth.currentUser;
   const authUid = currentUser?.uid;
@@ -84,6 +85,7 @@ export async function performWriteDiagnostic(
   const fullPath = `${collectionName}/${docId}`;
 
   console.log("[FIRESTORE WRITE START]", {
+    context,
     "AUTH READY": isAuthenticated,
     "AUTH UID": authUid || "NONE",
     "CURRENT USER": isAuthenticated,
@@ -94,6 +96,7 @@ export async function performWriteDiagnostic(
 
   if (!currentUser || !authUid) {
     console.warn("[FIRESTORE WRITE ABORTED] auth.currentUser is null or unauthenticated. Operation cancelled.", {
+      context,
       fullPath,
       operation,
     });
@@ -103,6 +106,7 @@ export async function performWriteDiagnostic(
   try {
     await writeFn();
     console.log("[FIRESTORE WRITE SUCCESS]", {
+      context,
       "AUTH READY": true,
       "AUTH UID": authUid,
       OPERATION: operation,
@@ -111,6 +115,7 @@ export async function performWriteDiagnostic(
     return true;
   } catch (error: any) {
     console.error("[FIRESTORE WRITE FAILED]", {
+      context,
       "AUTH READY": isAuthenticated,
       "AUTH UID": authUid || "NONE",
       OPERATION: operation,
@@ -119,6 +124,7 @@ export async function performWriteDiagnostic(
       "error.message": error?.message || String(error),
       error,
     });
+    console.trace("[FIRESTORE WRITE FAILED TRACE]");
     throw error;
   }
 }
@@ -126,7 +132,12 @@ export async function performWriteDiagnostic(
 /**
  * Save data payload to Firestore under timetable_data/{uid}_{key}
  */
-export async function saveToFirebase(key: string, data: any, customUid?: string): Promise<boolean> {
+export async function saveToFirebase(
+  key: string,
+  data: any,
+  customUid?: string,
+  context: string = "SAVE_TO_FIREBASE"
+): Promise<boolean> {
   const currentUser = auth.currentUser;
   const uid = customUid || currentUser?.uid;
   if (!currentUser || !uid || currentUser.uid !== uid) {
@@ -144,7 +155,8 @@ export async function saveToFirebase(key: string, data: any, customUid?: string)
     async () => {
       await setDoc(docRef, { payload: JSON.stringify(data), updatedAt: new Date().toISOString() });
     },
-    { key, dataLength: JSON.stringify(data).length }
+    { key, dataLength: JSON.stringify(data).length },
+    context
   );
 }
 
@@ -201,19 +213,24 @@ export function validateTeacherData(teacher: any): void {
  * 2) weeklySchedules/{uid}
  * 3) timetable_data/{uid}
  */
-export async function saveFullStateToFirestore(fullData: {
-  teachers: any[];
-  classes: any[];
-  subjects: any[];
-  assignments: any[];
-  timeConfig: any;
-  cells: any[];
-  versions: any[];
-}, customUid?: string): Promise<boolean> {
+export async function saveFullStateToFirestore(
+  fullData: {
+    teachers: any[];
+    classes: any[];
+    subjects: any[];
+    assignments: any[];
+    timeConfig: any;
+    cells: any[];
+    versions: any[];
+  },
+  customUid?: string,
+  context: string = "SAVE_FULL_STATE"
+): Promise<boolean> {
   const currentUser = auth.currentUser;
   const uid = customUid || currentUser?.uid;
 
   console.log("[AUTH CHECK BEFORE WRITE]", {
+    context,
     authReady: !!currentUser,
     isAuthenticated: !!currentUser,
     authUid: currentUser?.uid,
@@ -251,7 +268,8 @@ export async function saveFullStateToFirestore(fullData: {
         updatedAt,
       }, { merge: true });
     },
-    { teachersCount: normalizedTeachers.length }
+    { teachersCount: normalizedTeachers.length },
+    `${context} -> teachers`
   );
 
   // 2) Write to weeklySchedules/{uid}
@@ -267,7 +285,8 @@ export async function saveFullStateToFirestore(fullData: {
         updatedAt,
       }, { merge: true });
     },
-    { cellsCount: cleanFullData.cells.length }
+    { cellsCount: cleanFullData.cells.length },
+    `${context} -> weeklySchedules`
   );
 
   // 3) Write full data bundle to timetable_data/{uid}
@@ -284,7 +303,8 @@ export async function saveFullStateToFirestore(fullData: {
         updatedAt,
       });
     },
-    { payloadSize: payloadStr.length }
+    { payloadSize: payloadStr.length },
+    `${context} -> timetable_data`
   );
 
   return true;
@@ -341,7 +361,11 @@ export async function loadFullStateFromFirestore(customUid?: string) {
 /**
  * Save a timetable version to teachers/{uid}/timetableVersions/{versionId}
  */
-export async function saveTimetableVersionToFirestore(version: any, customUid?: string): Promise<boolean> {
+export async function saveTimetableVersionToFirestore(
+  version: any,
+  customUid?: string,
+  context: string = "SAVE_TIMETABLE_VERSION"
+): Promise<boolean> {
   const currentUser = auth.currentUser;
   const uid = customUid || currentUser?.uid;
 
@@ -363,14 +387,19 @@ export async function saveTimetableVersionToFirestore(version: any, customUid?: 
         updatedAt: new Date().toISOString(),
       });
     },
-    { versionId: version.id, name: version.name }
+    { versionId: version.id, name: version.name },
+    context
   );
 }
 
 /**
  * Delete a timetable version from teachers/{uid}/timetableVersions/{versionId}
  */
-export async function deleteTimetableVersionFromFirestore(versionId: string, customUid?: string): Promise<boolean> {
+export async function deleteTimetableVersionFromFirestore(
+  versionId: string,
+  customUid?: string,
+  context: string = "DELETE_TIMETABLE_VERSION"
+): Promise<boolean> {
   const currentUser = auth.currentUser;
   const uid = customUid || currentUser?.uid;
 
@@ -388,6 +417,8 @@ export async function deleteTimetableVersionFromFirestore(versionId: string, cus
     docId,
     async () => {
       await deleteDoc(versionRef);
-    }
+    },
+    undefined,
+    context
   );
 }
