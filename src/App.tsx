@@ -50,8 +50,6 @@ import {
   logoutFirebase,
   saveFullStateToFirestore,
   loadFullStateFromFirestore,
-  saveTimetableVersionToFirestore,
-  deleteTimetableVersionFromFirestore,
 } from './services/firebase';
 
 import { User } from 'firebase/auth';
@@ -408,7 +406,6 @@ export default function App() {
 
     if (user) {
       try {
-        await saveTimetableVersionToFirestore(newVersion, user.uid, "SAVE_TIMETABLE_VERSION");
         await syncToFirestore({ versions: nextVersions }, "SAVE_QUICK_VERSION");
         console.log(`[FIRESTORE] WRITE SUCCESS: TimetableVersion ${newVersion.id} saved to Firestore.`);
       } catch (err) {
@@ -431,7 +428,6 @@ export default function App() {
     const nextVersions = versions.filter((v) => v.id !== versionId);
     setVersions(nextVersions);
     if (user) {
-      await deleteTimetableVersionFromFirestore(versionId, user.uid, "DELETE_TIMETABLE_VERSION");
       await syncToFirestore({ versions: nextVersions }, "DELETE_VERSION");
     }
   };
