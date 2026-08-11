@@ -453,6 +453,9 @@ export default function App() {
   const handleGoogleLogin = async () => {
     setIsLoggingIn(true);
     setLoginError(null);
+    setSyncError(null);
+    loadedUidRef.current = null;
+    isSeedingRef.current = false;
     try {
       const loggedInUser = await loginWithGoogle();
       if (loggedInUser) {
