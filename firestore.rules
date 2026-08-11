@@ -18,7 +18,7 @@ service cloud.firestore {
 
     // Allow users to read and write their own timetable data
     match /timetable_data/{docId} {
-      allow read, write: if request.auth != null && (docId == request.auth.uid || docId.startsWith(request.auth.uid + "_"));
+      allow read, write: if request.auth != null && (docId == request.auth.uid || docId.matches('^' + request.auth.uid + '_.*'));
     }
 
     // Default deny for all other documents
