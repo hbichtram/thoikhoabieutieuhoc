@@ -58,6 +58,9 @@ import { User } from 'firebase/auth';
 import { checkFullSchedule } from './utils/conflictChecker';
 import { normalizeTeacher } from './utils/teacherUtils';
 
+const APP_BUILD_VERSION = "TKB-SMART-FIREBASE-FIX-2026-08-11";
+console.log("[APP BUILD VERSION]", APP_BUILD_VERSION);
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [hasUnsavedScheduleChanges, setHasUnsavedScheduleChanges] = useState<boolean>(false);
@@ -68,16 +71,24 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  const updateSyncError = useCallback((val: string | null, source: string) => {
-    console.group("[SYNC ERROR SET]");
-    console.log("value =", val);
-    console.log("source =", source);
-    if (val) {
-      console.trace("[SYNC ERROR CALL STACK]");
+  const activeRequestIdRef = useRef<number>(0);
+
+  const setFirestoreSyncSuccess = useCallback((source: string, reqId: number) => {
+    if (reqId === activeRequestIdRef.current) {
+      console.log(`[FIRESTORE SYNC SUCCESS] Cleared syncError from source: ${source} (reqId #${reqId})`);
+      setSyncError(null);
     }
-    console.groupEnd();
-    setSyncError(val);
   }, []);
+
+  const setFirestoreSyncError = useCallback((errVal: string, source: string, reqId: number) => {
+    if (reqId === activeRequestIdRef.current) {
+      console.error(`[FIRESTORE SYNC ERROR] setSyncError from source: ${source} (reqId #${reqId}) ->`, errVal);
+      setSyncError(errVal);
+    } else {
+      console.warn(`[FIRESTORE SYNC IGNORED STALE ERROR] reqId #${reqId} vs active #${activeRequestIdRef.current} from ${source}`);
+    }
+  }, []);
+
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
@@ -108,13 +119,14 @@ export default function App() {
       if (!currentUser) {
         loadedUidRef.current = null;
         isSeedingRef.current = false;
-        updateSyncError(null, "AUTH_STATE_NULL");
+        activeRequestIdRef.current += 1;
+        setSyncError(null);
         setIsSyncing(false);
       }
     });
 
     return () => unsubscribe();
-  }, [updateSyncError]);
+  }, []);
 
   // 2. Load or Seed Firestore Data ONLY after Auth is Ready and User exists
   useEffect(() => {
@@ -123,10 +135,13 @@ export default function App() {
     if (loadedUidRef.current === user.uid) return;
     loadedUidRef.current = user.uid;
 
+    const currentReqId = ++activeRequestIdRef.current;
     setIsSyncing(true);
-    updateSyncError(null, "LOAD_FULL_STATE_START");
+    setSyncError(null);
+
     loadFullStateFromFirestore(user.uid)
       .then((remoteData) => {
+        if (currentReqId !== activeRequestIdRef.current) return;
         if (remoteData) {
           if (remoteData.teachers) {
             const normalized = remoteData.teachers.map((t: Teacher) => normalizeTeacher(t));
@@ -157,21 +172,24 @@ export default function App() {
             setVersions(remoteData.versions);
             setStoredVersions(remoteData.versions);
           }
-          console.log(`[FIRESTORE READ SUCCESS] Fully loaded data from Firestore for uid: ${user.uid}`);
-          updateSyncError(null, "LOAD_FULL_STATE_SUCCESS");
+          console.log(`[FIRESTORE READ SUCCESS] Fully loaded data from Firestore for uid: ${user.uid} (reqId #${currentReqId})`);
         } else {
-          console.log(`[FIRESTORE READ SUCCESS (EMPTY)] Document not found for uid: ${user.uid}. Skipping auto-seed.`);
-          updateSyncError(null, "LOAD_FULL_STATE_EMPTY");
+          console.log(`[FIRESTORE READ SUCCESS (EMPTY)] Document not found for uid: ${user.uid} (reqId #${currentReqId}).`);
         }
+        setFirestoreSyncSuccess("LOAD_FULL_STATE_SUCCESS", currentReqId);
       })
       .catch((err) => {
-        console.error("[FIRESTORE READ FAILED]", err);
-        updateSyncError(err?.code || err?.message || String(err), "LOAD_FULL_STATE_FAILED");
+        if (currentReqId !== activeRequestIdRef.current) return;
+        const errMsg = err?.code || err?.message || String(err);
+        console.error(`[FIRESTORE READ FAILED] (reqId #${currentReqId})`, err);
+        setFirestoreSyncError(errMsg, "LOAD_FULL_STATE_FAILED", currentReqId);
       })
       .finally(() => {
-        setIsSyncing(false);
+        if (currentReqId === activeRequestIdRef.current) {
+          setIsSyncing(false);
+        }
       });
-  }, [authReady, user, updateSyncError]);
+  }, [authReady, user, setFirestoreSyncSuccess, setFirestoreSyncError]);
 
   // Sync state to LocalStorage as secondary fallback cache
   useEffect(() => { setStoredTeachers(teachers); }, [teachers]);
@@ -205,6 +223,7 @@ export default function App() {
       return;
     }
 
+    const currentReqId = ++activeRequestIdRef.current;
     setIsSyncing(true);
     try {
       const fullData = {
@@ -217,18 +236,26 @@ export default function App() {
         versions: overrides?.versions ?? versions,
       };
 
-      await saveFullStateToFirestore(fullData, user.uid, context);
-      updateSyncError(null, `WRITE_SUCCESS_${context}`);
-      console.log(`[FIRESTORE WRITE SUCCESS] (${context}) for uid: ${user.uid}`);
+      const success = await saveFullStateToFirestore(fullData, user.uid, context);
+      if (currentReqId === activeRequestIdRef.current) {
+        if (success) {
+          setFirestoreSyncSuccess(`WRITE_SUCCESS_${context}`, currentReqId);
+          console.log(`[FIRESTORE WRITE SUCCESS] (${context}) for uid: ${user.uid} (reqId #${currentReqId})`);
+        }
+      }
     } catch (error: any) {
-      const errMsg = error?.code || error?.message || String(error);
-      updateSyncError(errMsg, `WRITE_ERROR_${context}`);
-      console.error(`[FIRESTORE WRITE ERROR] (${context}):`, error);
-      alert(`⚠️ Lỗi ghi Firestore [${context}]: ${error instanceof Error ? error.message : String(error)}`);
+      if (currentReqId === activeRequestIdRef.current) {
+        const errMsg = error?.code || error?.message || String(error);
+        setFirestoreSyncError(errMsg, `WRITE_ERROR_${context}`, currentReqId);
+        console.error(`[FIRESTORE WRITE ERROR] (${context}) (reqId #${currentReqId}):`, error);
+        alert(`⚠️ Lỗi ghi Firestore [${context}]: ${error instanceof Error ? error.message : String(error)}`);
+      }
     } finally {
-      setIsSyncing(false);
+      if (currentReqId === activeRequestIdRef.current) {
+        setIsSyncing(false);
+      }
     }
-  }, [authReady, user, teachers, classes, subjects, assignments, timeConfig, cells, versions, updateSyncError]);
+  }, [authReady, user, teachers, classes, subjects, assignments, timeConfig, cells, versions, setFirestoreSyncSuccess, setFirestoreSyncError]);
 
   const handleTabChange = (newTab: TabType) => {
     if (activeTab === 'timetable' && hasUnsavedScheduleChanges && newTab !== 'timetable') {
@@ -442,7 +469,8 @@ export default function App() {
   const handleGoogleLogin = async () => {
     setIsLoggingIn(true);
     setLoginError(null);
-    updateSyncError(null, "LOGIN_GOOGLE_START");
+    activeRequestIdRef.current += 1;
+    setSyncError(null);
     loadedUidRef.current = null;
     isSeedingRef.current = false;
     try {
@@ -471,7 +499,8 @@ export default function App() {
   const handleLogout = async () => {
     await logoutFirebase();
     setUser(null);
-    updateSyncError(null, "LOGOUT_CLEANUP");
+    activeRequestIdRef.current += 1;
+    setSyncError(null);
     setLoginError(null);
     loadedUidRef.current = null;
     isSeedingRef.current = false;
