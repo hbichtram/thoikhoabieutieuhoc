@@ -151,8 +151,15 @@ export async function saveFullStateToFirestore(fullData: {
   versions: any[];
 }, customUid?: string): Promise<boolean> {
   const uid = customUid || auth.currentUser?.uid;
+
+  console.log("[AUTH CHECK]", {
+    isAuthenticated: !!auth.currentUser,
+    uid: uid,
+    email: auth.currentUser?.email
+  });
+
   if (!uid) {
-    console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng.");
+    console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng. Bỏ qua ghi Firestore.");
     return false;
   }
 
@@ -170,24 +177,30 @@ export async function saveFullStateToFirestore(fullData: {
 
     const payloadStr = JSON.stringify(cleanFullData);
 
-    // Write to teachers/{uid}
+    // 1) Write to teachers/{uid}
+    const teacherPath = `teachers/${uid}`;
+    console.log("[FIRESTORE WRITE PATH]", teacherPath);
     const teacherDocRef = doc(db, "teachers", uid);
     await setDoc(teacherDocRef, {
       teachers: normalizedTeachers,
       updatedAt,
     }, { merge: true });
-    console.log(`[FIRESTORE] WRITE SUCCESS: teachers/${uid}`);
+    console.log(`[FIRESTORE] WRITE SUCCESS: ${teacherPath}`);
 
-    // Write to weeklySchedules/{uid}
+    // 2) Write to weeklySchedules/{uid}
+    const schedulePath = `weeklySchedules/${uid}`;
+    console.log("[FIRESTORE WRITE PATH]", schedulePath);
     const scheduleDocRef = doc(db, "weeklySchedules", uid);
     await setDoc(scheduleDocRef, {
       cells: cleanFullData.cells,
       timeConfig: cleanFullData.timeConfig,
       updatedAt,
     }, { merge: true });
-    console.log(`[FIRESTORE] WRITE SUCCESS: weeklySchedules/${uid}`);
+    console.log(`[FIRESTORE] WRITE SUCCESS: ${schedulePath}`);
 
-    // Write full data bundle to timetable_data/{uid}
+    // 3) Write full data bundle to timetable_data/{uid}
+    const dataPath = `timetable_data/${uid}`;
+    console.log("[FIRESTORE WRITE PATH]", dataPath);
     const dataDocRef = doc(db, "timetable_data", uid);
     await setDoc(dataDocRef, {
       payload: payloadStr,
@@ -195,11 +208,16 @@ export async function saveFullStateToFirestore(fullData: {
       assignmentsCount: cleanFullData.assignments.length,
       updatedAt,
     });
-    console.log(`[FIRESTORE] WRITE SUCCESS: timetable_data/${uid}`);
+    console.log(`[FIRESTORE] WRITE SUCCESS: ${dataPath}`);
 
     return true;
-  } catch (error) {
-    console.error(`[FIRESTORE] WRITE ERROR for full state under uid ${uid}:`, error);
+  } catch (error: any) {
+    console.error("[FIRESTORE ERROR]", {
+      code: error?.code,
+      message: error?.message,
+      uid,
+      error
+    });
     throw error;
   }
 }
@@ -209,24 +227,37 @@ export async function saveFullStateToFirestore(fullData: {
  */
 export async function loadFullStateFromFirestore(customUid?: string) {
   const uid = customUid || auth.currentUser?.uid;
+  console.log("[AUTH CHECK]", {
+    isAuthenticated: !!auth.currentUser,
+    uid: uid,
+    email: auth.currentUser?.email
+  });
+
   if (!uid) {
     console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng.");
     return null;
   }
 
+  const dataPath = `timetable_data/${uid}`;
   try {
+    console.log("[FIRESTORE READ PATH]", dataPath);
     const dataDocRef = doc(db, "timetable_data", uid);
     const snap = await getDoc(dataDocRef);
     if (snap.exists()) {
       const data = snap.data();
       if (data && data.payload) {
-        console.log(`[FIRESTORE] READ SUCCESS: timetable_data/${uid}`);
+        console.log(`[FIRESTORE] READ SUCCESS: ${dataPath}`);
         return JSON.parse(data.payload);
       }
     }
     return null;
-  } catch (error) {
-    console.error(`[FIRESTORE] READ ERROR for timetable_data/${uid}:`, error);
+  } catch (error: any) {
+    console.error("[FIRESTORE ERROR]", {
+      code: error?.code,
+      message: error?.message,
+      path: dataPath,
+      uid
+    });
     return null;
   }
 }
@@ -236,21 +267,34 @@ export async function loadFullStateFromFirestore(customUid?: string) {
  */
 export async function saveTimetableVersionToFirestore(version: any, customUid?: string): Promise<boolean> {
   const uid = customUid || auth.currentUser?.uid;
+  console.log("[AUTH CHECK]", {
+    isAuthenticated: !!auth.currentUser,
+    uid: uid,
+    email: auth.currentUser?.email
+  });
+
   if (!uid) {
     console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng.");
     return false;
   }
 
+  const path = `teachers/${uid}/timetableVersions/${version.id}`;
   try {
+    console.log("[FIRESTORE WRITE PATH]", path);
     const versionRef = doc(db, "teachers", uid, "timetableVersions", version.id);
     await setDoc(versionRef, {
       ...version,
       updatedAt: new Date().toISOString(),
     });
-    console.log(`[FIRESTORE] WRITE SUCCESS: teachers/${uid}/timetableVersions/${version.id}`);
+    console.log(`[FIRESTORE] WRITE SUCCESS: ${path}`);
     return true;
-  } catch (error) {
-    console.error(`[FIRESTORE] WRITE ERROR for version ${version.id}:`, error);
+  } catch (error: any) {
+    console.error("[FIRESTORE ERROR]", {
+      code: error?.code,
+      message: error?.message,
+      path,
+      uid
+    });
     throw error;
   }
 }
@@ -260,18 +304,31 @@ export async function saveTimetableVersionToFirestore(version: any, customUid?: 
  */
 export async function deleteTimetableVersionFromFirestore(versionId: string, customUid?: string): Promise<boolean> {
   const uid = customUid || auth.currentUser?.uid;
+  console.log("[AUTH CHECK]", {
+    isAuthenticated: !!auth.currentUser,
+    uid: uid,
+    email: auth.currentUser?.email
+  });
+
   if (!uid) {
     console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng.");
     return false;
   }
 
+  const path = `teachers/${uid}/timetableVersions/${versionId}`;
   try {
+    console.log("[FIRESTORE DELETE PATH]", path);
     const versionRef = doc(db, "teachers", uid, "timetableVersions", versionId);
     await deleteDoc(versionRef);
-    console.log(`[FIRESTORE] DELETE SUCCESS: teachers/${uid}/timetableVersions/${versionId}`);
+    console.log(`[FIRESTORE] DELETE SUCCESS: ${path}`);
     return true;
-  } catch (error) {
-    console.error(`[FIRESTORE] DELETE ERROR for version ${versionId}:`, error);
+  } catch (error: any) {
+    console.error("[FIRESTORE ERROR]", {
+      code: error?.code,
+      message: error?.message,
+      path,
+      uid
+    });
     throw error;
   }
 }
