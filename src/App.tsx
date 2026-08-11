@@ -113,6 +113,7 @@ export default function App() {
     loadedUidRef.current = user.uid;
 
     setIsSyncing(true);
+    setSyncError(null);
     loadFullStateFromFirestore(user.uid)
       .then((remoteData) => {
         if (remoteData) {
