@@ -289,7 +289,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
       if (existingCell.isLocked) {
         alert('🔒 Không thể đè lên ô đã bị khóa!');
       } else {
-        alert('🔴 Ô này đã có tiết học. Vui lòng chọn ô trống!');
+        alert('🔴 Ô này đã có tiết. Vui lòng chọn ô trống.');
       }
       return;
     }
@@ -788,13 +788,17 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                   <div
                     key={item.assignment.id}
                     draggable={!isDepleted}
-                    onDragStart={() => {
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      e.dataTransfer.setData('text/plain', item.assignment.id);
+                      e.dataTransfer.effectAllowed = 'move';
                       setDraggedItem({
                         type: 'unassigned',
                         assignmentId: item.assignment.id,
                       });
                     }}
-                    onDragEnd={() => {
+                    onDragEnd={(e) => {
+                      e.stopPropagation();
                       setDraggedItem(null);
                       setHoveredSlot(null);
                     }}
@@ -948,6 +952,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
 
                           // Find cell in slot
                           const cellInSlot = workingCells.find((c) => {
+                            if (c.day !== day) return false;
                             if (!isSameSlot(c.shift, c.periodNumber, shift, pNum)) return false;
 
                             return viewMode === 'class'
@@ -989,11 +994,17 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                               key={day}
                               onDragOver={(e) => {
                                 e.preventDefault();
+                                e.stopPropagation();
+                                e.dataTransfer.dropEffect = 'move';
                                 setHoveredSlot({ day, shift, periodNumber: pNum });
                               }}
-                              onDragLeave={() => setHoveredSlot(null)}
+                              onDragLeave={(e) => {
+                                e.stopPropagation();
+                                setHoveredSlot(null);
+                              }}
                               onDrop={(e) => {
                                 e.preventDefault();
+                                e.stopPropagation();
                                 setHoveredSlot(null);
                                 if (draggedItem) {
                                   const itemToPlace = draggedItem;
@@ -1026,14 +1037,18 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                               ) : cellInSlot ? (
                                 <div
                                   draggable={!cellInSlot.isLocked}
-                                  onDragStart={() => {
+                                  onDragStart={(e) => {
+                                    e.stopPropagation();
+                                    e.dataTransfer.setData('text/plain', cellInSlot.assignmentId);
+                                    e.dataTransfer.effectAllowed = 'move';
                                     setDraggedItem({
                                       type: 'cell',
                                       assignmentId: cellInSlot.assignmentId,
                                       sourceCellId: cellInSlot.id,
                                     });
                                   }}
-                                  onDragEnd={() => {
+                                  onDragEnd={(e) => {
+                                    e.stopPropagation();
                                     setDraggedItem(null);
                                     setHoveredSlot(null);
                                   }}
