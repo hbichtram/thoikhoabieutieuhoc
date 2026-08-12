@@ -662,164 +662,171 @@ export const TeachersView: React.FC<TeachersViewProps> = ({
       {/* Modal Add / Edit Teacher */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-5 animate-in fade-in duration-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-100 flex flex-col max-h-[90vh] animate-in fade-in duration-200 overflow-hidden">
+            {/* Header (Cố định ở trên) */}
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 flex-shrink-0 bg-white z-10">
               <h3 className="font-bold text-slate-900 text-base">
                 {editingTeacher ? 'Sửa thông tin Giáo viên' : 'Thêm Giáo viên mới'}
               </h3>
               <button
+                type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveForm} className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+            {/* Form & Scrollable Content & Fixed Footer */}
+            <form onSubmit={handleSaveForm} className="flex flex-col min-h-0 flex-1">
+              {/* Form Content (Cho phép cuộn dọc) */}
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Mã giáo viên</label>
+                    <input
+                      type="text"
+                      required
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Loại giáo viên</label>
+                    <select
+                      value={type}
+                      onChange={(e) => handleTypeChange(e.target.value as 'homeroom' | 'subject')}
+                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-medium"
+                    >
+                      <option value="subject">Giáo viên bộ môn (Max 23 tiết/tuần)</option>
+                      <option value="homeroom">Giáo viên chủ nhiệm (Max 20 tiết/tuần)</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Mã giáo viên</label>
+                  <label className="block font-medium text-slate-700 mb-1">Họ và tên</label>
                   <input
                     type="text"
                     required
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-semibold"
+                    placeholder="Ví dụ: Cô Trâm, Cô Lan..."
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-medium"
                   />
                 </div>
 
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">Loại giáo viên</label>
-                  <select
-                    value={type}
-                    onChange={(e) => handleTypeChange(e.target.value as 'homeroom' | 'subject')}
-                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-medium"
-                  >
-                    <option value="subject">Giáo viên bộ môn (Max 23 tiết/tuần)</option>
-                    <option value="homeroom">Giáo viên chủ nhiệm (Max 20 tiết/tuần)</option>
-                  </select>
+                {type === 'homeroom' ? (
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Lớp chủ nhiệm</label>
+                    <select
+                      value={homeroomClassId}
+                      onChange={(e) => setHomeroomClassId(e.target.value)}
+                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-medium"
+                    >
+                      <option value="">-- Chọn lớp chủ nhiệm --</option>
+                      {classes.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          Lớp {c.name} (Khối {c.grade})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Môn phụ trách chính</label>
+                    <select
+                      value={mainSubjectId}
+                      onChange={(e) => setMainSubjectId(e.target.value)}
+                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-medium"
+                    >
+                      <option value="">-- Chọn môn phụ trách --</option>
+                      {subjects.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.shortName})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Định mức tiết/tuần
+                    </label>
+                    <div className="w-full p-2 bg-slate-100/90 border border-slate-200 rounded-lg font-bold text-blue-700 flex items-center justify-between">
+                      <span>{maxWeeklyPeriods} tiết/tuần</span>
+                      <span className="text-[10px] font-normal text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                        {type === 'homeroom' ? 'GVCN' : 'Bộ môn'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      Định mức tham chiếu theo loại giáo viên
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Tối đa tiết / ngày</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={maxPeriodsPerDay}
+                      onChange={(e) => setMaxPeriodsPerDay(Number(e.target.value))}
+                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-semibold"
+                    />
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">Mặc định: 4 tiết/ngày</span>
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">Họ và tên</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ví dụ: Cô Trâm, Cô Lan..."
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-medium"
-                />
-              </div>
-
-              {type === 'homeroom' ? (
+                {/* Number of Max Sessions / Week */}
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Lớp chủ nhiệm</label>
+                  <label className="block font-semibold text-indigo-900 mb-1">
+                    Số buổi tối đa / tuần (RÀNG BUỘC CỨNG khi xếp TKB)
+                  </label>
                   <select
-                    value={homeroomClassId}
-                    onChange={(e) => setHomeroomClassId(e.target.value)}
-                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-medium"
+                    value={maxSessionsPerWeek}
+                    onChange={(e) => setMaxSessionsPerWeek(Number(e.target.value))}
+                    className="w-full p-2.5 bg-indigo-50/80 border border-indigo-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900"
                   >
-                    <option value="">-- Chọn lớp chủ nhiệm --</option>
-                    {classes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        Lớp {c.name} (Khối {c.grade})
+                    {[1, 2, 3, 4, 5, 6, 7].map((num) => (
+                      <option key={num} value={num}>
+                        {num} buổi / tuần {num === 7 ? '(Cho phép xuất hiện tối đa 7 buổi)' : ''}
                       </option>
                     ))}
                   </select>
-                </div>
-              ) : (
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">Môn phụ trách chính</label>
-                  <select
-                    value={mainSubjectId}
-                    onChange={(e) => setMainSubjectId(e.target.value)}
-                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-medium"
-                  >
-                    <option value="">-- Chọn môn phụ trách --</option>
-                    {subjects.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.shortName})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">Định mức tiết/tuần (Tham chiếu)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={40}
-                    value={maxWeeklyPeriods}
-                    onChange={(e) => setMaxWeeklyPeriods(Number(e.target.value))}
-                    className="w-full p-2 bg-slate-100 border border-slate-200 rounded-lg font-bold text-blue-700 focus:bg-white focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="text-[10px] text-slate-400 mt-0.5 block">
-                    {type === 'homeroom' ? 'Tham chiếu GVCN: 20 tiết' : 'Tham chiếu Bộ môn: 23 tiết'}
+                  <span className="text-[11px] text-slate-600 mt-1.5 block font-medium">
+                    💡 Ràng buộc cứng: Giáo viên không được xếp quá {maxSessionsPerWeek} buổi/tuần.
                   </span>
                 </div>
 
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Tối đa tiết / ngày</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={maxPeriodsPerDay}
-                    onChange={(e) => setMaxPeriodsPerDay(Number(e.target.value))}
-                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-semibold"
+                  <label className="block font-medium text-slate-700 mb-1">Ghi chú</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Nhập ghi chú thêm nếu có..."
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="text-[10px] text-slate-400 mt-0.5 block">Mặc định: 4 tiết/ngày</span>
                 </div>
               </div>
 
-              {/* Number of Max Sessions / Week */}
-              <div>
-                <label className="block font-semibold text-indigo-900 mb-1">
-                  Số buổi tối đa / tuần (RÀNG BUỘC CỨNG khi xếp TKB)
-                </label>
-                <select
-                  value={maxSessionsPerWeek}
-                  onChange={(e) => setMaxSessionsPerWeek(Number(e.target.value))}
-                  className="w-full p-2.5 bg-indigo-50/80 border border-indigo-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900"
-                >
-                  {[1, 2, 3, 4, 5, 6, 7].map((num) => (
-                    <option key={num} value={num}>
-                      {num} buổi / tuần {num === 7 ? '(Cho phép xuất hiện tối đa 7 buổi)' : ''}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-[11px] text-slate-500 mt-1 block">
-                  💡 Ràng buộc cứng: TKB sẽ KHÔNG xếp giáo viên vượt quá {maxSessionsPerWeek} buổi/tuần. Đây là giới hạn tối đa, hệ thống sẽ tự động ưu tiên gom tiết và không cố tình trải ra đủ số buổi.
-                </span>
-              </div>
-
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">Ghi chú</label>
-                <textarea
-                  rows={2}
-                  placeholder="Nhập ghi chú thêm nếu có..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              {/* Footer (Cố định ở dưới) */}
+              <div className="border-t border-slate-100 px-6 py-3.5 bg-slate-50/90 backdrop-blur-xs flex items-center justify-end gap-2 flex-shrink-0 z-10">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50"
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-white transition-colors"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-500 shadow-md"
+                  className="px-5 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-500 shadow-sm transition-colors"
                 >
                   {editingTeacher ? 'Cập nhật' : 'Thêm mới'}
                 </button>
