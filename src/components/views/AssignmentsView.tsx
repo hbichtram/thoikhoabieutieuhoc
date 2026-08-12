@@ -5,17 +5,16 @@ import {
   Edit2,
   Trash2,
   ClipboardList,
-  Filter,
-  X,
   AlertTriangle,
   CheckCircle2,
   Upload,
   UserCheck,
   BookOpen,
   School,
-  AlertCircle,
+  X,
+  User,
   Clock,
-  Sparkles,
+  Layers,
 } from 'lucide-react';
 import { Assignment, Teacher, ClassItem, Subject, ScheduleCell } from '../../types';
 import {
@@ -77,8 +76,14 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
   const [subjectId, setSubjectId] = useState('');
   const [classId, setClassId] = useState('');
   const [periodsPerWeek, setPeriodsPerWeek] = useState(2);
+  const [editNotes, setEditNotes] = useState('');
 
-  // Helper map for class & teacher period totals
+  // Total weekly periods across all assignments
+  const totalWeeklyPeriods = useMemo(() => {
+    return assignments.reduce((sum, a) => sum + a.periodsPerWeek, 0);
+  }, [assignments]);
+
+  // Helper map for class period totals
   const classTotals = useMemo(() => {
     const map = new Map<string, number>();
     assignments.forEach((a) => {
@@ -129,6 +134,7 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
     setSubjectId(a.subjectId);
     setClassId(a.classId);
     setPeriodsPerWeek(a.periodsPerWeek);
+    setEditNotes('');
   };
 
   // Batch import callback handler
@@ -177,7 +183,7 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
     if (!deleteConfirmTarget) return;
     onDeleteAssignment(deleteConfirmTarget.id);
     setDeleteConfirmTarget(null);
-    setSuccessToast('✅ Đã xóa phân công.');
+    setSuccessToast('✅ Đã xóa phân công chuyên môn.');
     setTimeout(() => setSuccessToast(null), 3000);
   };
 
@@ -206,7 +212,7 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
         const metric = teacherMetrics.find((m) => m.teacher.id === tch.id);
         if (metric) {
           if (selectedStatusFilter === 'normal') {
-            matchStatus = !metric.isExcessPeriods && !metric.isExceededSessions;
+            matchStatus = !metric.isExcessPeriods && !metric.isExceededSessions && !metric.isUnderPeriods;
           } else if (selectedStatusFilter === 'excess') {
             matchStatus = metric.isExcessPeriods;
           } else if (selectedStatusFilter === 'under') {
@@ -252,96 +258,93 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
   };
 
   return (
-    <div className="p-3 max-w-[1700px] mx-auto space-y-2.5 font-sans bg-slate-50/50 min-h-screen">
-      {/* A. Compact Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-2xs">
+    <div className="p-4 sm:p-6 max-w-[1700px] mx-auto space-y-4 font-sans bg-slate-50/50 min-h-screen">
+      
+      {/* 1. HEADER TRANG */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
         <div>
-          <h1 className="text-base font-extrabold text-slate-900 flex items-center gap-2 uppercase tracking-wide">
-            <ClipboardList className="w-5 h-5 text-indigo-600" />
+          <h1 className="text-xl font-black text-slate-900 flex items-center gap-2 uppercase tracking-wide">
+            <ClipboardList className="w-6 h-6 text-indigo-600" />
             <span>PHÂN CÔNG CHUYÊN MÔN</span>
           </h1>
-          <p className="text-slate-500 text-xs mt-0.5">
-            Quản lý phân công giáo viên – môn học – lớp học và số tiết trong tuần.
+          <p className="text-slate-500 text-xs mt-1 font-medium">
+            Quản lý giáo viên – môn học – lớp học – số tiết và tải dạy
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 shrink-0">
           <button
             onClick={() => setIsImportModalOpen(true)}
-            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-xl text-xs shadow-2xs transition-all active:scale-95"
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-2xs transition-all active:scale-95 cursor-pointer"
           >
-            <Upload className="w-3.5 h-3.5" />
+            <Upload className="w-4 h-4" />
             <span>Nhập từ Excel</span>
           </button>
 
           <button
             onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-xl text-xs shadow-2xs transition-all active:scale-95"
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-2xs transition-all active:scale-95 cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>+ Thêm phân công mới</span>
+            <Plus className="w-4 h-4" />
+            <span>+ Thêm phân công</span>
           </button>
         </div>
       </div>
 
-      {/* B. Compact Overview Bar (Single compact line ~40px) */}
-      <div className="bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex flex-wrap items-center gap-4 font-bold text-slate-800">
-          <div className="flex items-center gap-1.5 bg-indigo-50 text-indigo-900 px-2.5 py-1 rounded-xl border border-indigo-100">
+      {/* 2. THANH TỔNG QUAN (Compact Statistics Bar) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {/* Stat 1: Giáo viên */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col items-center justify-center text-center">
+          <div className="text-2xl font-black text-slate-900 leading-none">{teachers.length}</div>
+          <div className="text-xs font-semibold text-slate-500 mt-1 flex items-center gap-1">
             <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-            <span>👥 {teachers.length} GV</span>
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-purple-50 text-purple-900 px-2.5 py-1 rounded-xl border border-purple-100">
-            <BookOpen className="w-3.5 h-3.5 text-purple-600" />
-            <span>📚 {subjects.length} Môn</span>
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-blue-50 text-blue-900 px-2.5 py-1 rounded-xl border border-blue-100">
-            <School className="w-3.5 h-3.5 text-blue-600" />
-            <span>🏫 {classes.length} Lớp</span>
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-900 px-2.5 py-1 rounded-xl border border-emerald-100">
-            <ClipboardList className="w-3.5 h-3.5 text-emerald-600" />
-            <span>📋 {assignments.length} Phân công</span>
+            <span>Giáo viên</span>
           </div>
         </div>
 
-        {/* Warning Indicator Toggle Button */}
-        <button
-          onClick={() => {
-            setSelectedStatusFilter(selectedStatusFilter === 'warning' ? 'all' : 'warning');
-          }}
-          className={`flex items-center gap-1.5 px-3 py-1 rounded-xl font-bold border transition-all active:scale-95 text-xs ${
-            selectedStatusFilter === 'warning'
-              ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
-              : warningCount > 0
-              ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
-              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-          }`}
-          title="Bấm để lọc các phân công có cảnh báo"
-        >
-          {warningCount > 0 ? (
-            <>
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-              <span>⚠️ {warningCount} Cảnh báo</span>
-            </>
-          ) : (
-            <>
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              <span>🟢 Không có cảnh báo</span>
-            </>
-          )}
-        </button>
+        {/* Stat 2: Môn học */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col items-center justify-center text-center">
+          <div className="text-2xl font-black text-slate-900 leading-none">{subjects.length}</div>
+          <div className="text-xs font-semibold text-slate-500 mt-1 flex items-center gap-1">
+            <BookOpen className="w-3.5 h-3.5 text-purple-600" />
+            <span>Môn học</span>
+          </div>
+        </div>
+
+        {/* Stat 3: Lớp học */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col items-center justify-center text-center">
+          <div className="text-2xl font-black text-slate-900 leading-none">{classes.length}</div>
+          <div className="text-xs font-semibold text-slate-500 mt-1 flex items-center gap-1">
+            <School className="w-3.5 h-3.5 text-blue-600" />
+            <span>Lớp học</span>
+          </div>
+        </div>
+
+        {/* Stat 4: Phân công */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col items-center justify-center text-center">
+          <div className="text-2xl font-black text-slate-900 leading-none">{assignments.length}</div>
+          <div className="text-xs font-semibold text-slate-500 mt-1 flex items-center gap-1">
+            <ClipboardList className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Phân công</span>
+          </div>
+        </div>
+
+        {/* Stat 5: Tổng tiết/tuần */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col items-center justify-center text-center col-span-2 sm:col-span-1">
+          <div className="text-2xl font-black text-indigo-700 leading-none">{totalWeeklyPeriods}</div>
+          <div className="text-xs font-semibold text-slate-500 mt-1 flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Tổng tiết/tuần</span>
+          </div>
+        </div>
       </div>
 
-      {/* C. Class Periods Quick Ticker */}
-      <div className="bg-white px-3.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-2 text-xs overflow-x-auto whitespace-nowrap scrollbar-none">
-        <span className="font-extrabold text-slate-500 uppercase text-[10px] shrink-0">
-          Tổng tiết theo lớp:
+      {/* 3. THANH TỔNG TIẾT THEO LỚP */}
+      <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-3 text-xs overflow-x-auto whitespace-nowrap scrollbar-none">
+        <span className="font-extrabold text-slate-500 uppercase text-[11px] shrink-0 flex items-center gap-1">
+          <span>🏫 Tổng tiết theo lớp:</span>
         </span>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           {classes.map((c) => {
             const totalP = classTotals.get(c.id) || 0;
             const isSelected = selectedClassId === c.id;
@@ -349,40 +352,40 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
               <button
                 key={c.id}
                 onClick={() => setSelectedClassId(selectedClassId === c.id ? 'all' : c.id)}
-                className={`px-2 py-0.5 rounded-lg border text-[11px] font-semibold transition-all ${
+                className={`px-3 py-1 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
                   isSelected
-                    ? 'bg-blue-600 text-white border-blue-700 font-bold'
+                    ? 'bg-indigo-600 text-white border-indigo-700 font-bold shadow-2xs'
                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                 }`}
               >
-                Lớp {c.name} · <span className="font-bold">{totalP}t</span>
+                Lớp {c.name} <span className="font-bold ml-1">{totalP}t</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* D. Search & Filter Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-2xs text-xs">
-        {/* Search Input */}
-        <div className="relative w-full sm:w-64">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+      {/* 4. THANH TÌM KIẾM + BỘ LỌC */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs text-xs">
+        {/* Search input */}
+        <div className="relative flex-1 min-w-[240px] max-w-md">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="🔍 Tìm giáo viên, lớp, môn..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
           />
         </div>
 
         {/* Dropdown Filters */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Teacher Dropdown */}
+          {/* Tất cả GV */}
           <select
             value={selectedTeacherId}
             onChange={(e) => setSelectedTeacherId(e.target.value)}
-            className="p-1.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 max-w-[150px] truncate"
+            className="p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 max-w-[160px] truncate cursor-pointer"
           >
             <option value="all">Tất cả GV ▼</option>
             {teachers.map((t) => (
@@ -392,13 +395,13 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
             ))}
           </select>
 
-          {/* Class Dropdown */}
+          {/* Tất cả lớp */}
           <select
             value={selectedClassId}
             onChange={(e) => setSelectedClassId(e.target.value)}
-            className="p-1.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 max-w-[120px] truncate"
+            className="p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 max-w-[130px] truncate cursor-pointer"
           >
-            <option value="all">Tất cả Lớp ▼</option>
+            <option value="all">Tất cả lớp ▼</option>
             {classes.map((c) => (
               <option key={c.id} value={c.id}>
                 Lớp {c.name}
@@ -406,13 +409,13 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
             ))}
           </select>
 
-          {/* Subject Dropdown */}
+          {/* Tất cả môn */}
           <select
             value={selectedSubjectId}
             onChange={(e) => setSelectedSubjectId(e.target.value)}
-            className="p-1.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 max-w-[130px] truncate"
+            className="p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 max-w-[140px] truncate cursor-pointer"
           >
-            <option value="all">Tất cả Môn ▼</option>
+            <option value="all">Tất cả môn ▼</option>
             {subjects.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -420,26 +423,26 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
             ))}
           </select>
 
-          {/* Status Dropdown */}
+          {/* Tất cả trạng thái */}
           <select
             value={selectedStatusFilter}
             onChange={(e) => setSelectedStatusFilter(e.target.value)}
-            className="p-1.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500"
+            className="p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 cursor-pointer"
           >
             <option value="all">Tất cả trạng thái ▼</option>
-            <option value="normal">🟢 Bình thường</option>
-            <option value="excess">🟠 Dư định mức tham chiếu</option>
-            <option value="under">🔵 Thiếu định mức tham chiếu</option>
+            <option value="normal">🟢 Đủ tiết / Bình thường</option>
+            <option value="under">🟡 Thiếu tiết định mức</option>
+            <option value="excess">🔴 Vượt định mức</option>
             <option value="max_sessions">🟠 Đạt tối đa số buổi</option>
             <option value="exceeded_sessions">🔴 Vượt giới hạn số buổi</option>
-            <option value="warning">⚠️ Có cảnh báo</option>
+            <option value="warning">⚠️ Có cảnh báo ({warningCount})</option>
           </select>
 
           {/* Clear Filters Button */}
           {isFilterActive && (
             <button
               onClick={resetFilters}
-              className="text-indigo-600 font-bold hover:bg-indigo-50 px-2.5 py-1.5 rounded-xl border border-indigo-200 transition-all text-xs"
+              className="text-indigo-600 font-bold hover:bg-indigo-50 px-3 py-2 rounded-xl border border-indigo-200 transition-all text-xs cursor-pointer"
             >
               Xóa bộ lọc
             </button>
@@ -447,19 +450,19 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
         </div>
       </div>
 
-      {/* E. Main Assignment List Table */}
+      {/* 5. BẢNG PHÂN CÔNG CHÍNH */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-slate-900 text-white font-bold border-b border-slate-800">
-                <th className="p-3 pl-4">Giáo viên</th>
-                <th className="p-3">Môn học</th>
-                <th className="p-3">Lớp</th>
-                <th className="p-3">Tiết/tuần</th>
-                <th className="p-3">Tải dạy</th>
-                <th className="p-3">Trạng thái</th>
-                <th className="p-3 text-right pr-4">Thao tác</th>
+              <tr className="bg-slate-900 text-white font-bold uppercase tracking-wider text-[11px] border-b border-slate-800">
+                <th className="p-3.5 pl-5">GIÁO VIÊN</th>
+                <th className="p-3.5">MÔN</th>
+                <th className="p-3.5">LỚP</th>
+                <th className="p-3.5">TIẾT/TUẦN</th>
+                <th className="p-3.5">TẢI DẠY</th>
+                <th className="p-3.5">TRẠNG THÁI</th>
+                <th className="p-3.5 text-right pr-5">THAO TÁC</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -478,54 +481,55 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
                   // Teacher workload metrics
                   const metric = tch ? teacherMetrics.find((m) => m.teacher.id === tch.id) : null;
 
+                  // Status Badge Logic
                   let statusBadge = (
-                    <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                      🟢 Bình thường
+                    <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
+                      🟢 Đủ tiết
                     </span>
                   );
 
                   if (metric) {
                     if (metric.isExceededSessions) {
                       statusBadge = (
-                        <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-red-50 text-red-800 border border-red-300">
+                        <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-red-50 text-red-800 border border-red-300 inline-flex items-center gap-1">
                           🔴 Vượt {metric.usedSessions - metric.maxSessions} buổi
                         </span>
                       );
                     } else if (metric.isExcessPeriods) {
                       statusBadge = (
-                        <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-300">
-                          🟠 Dư {metric.diffPeriods} tiết
-                        </span>
-                      );
-                    } else if (metric.isAtMaxSessions) {
-                      statusBadge = (
-                        <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-50/80 text-amber-900 border border-amber-200">
-                          🟠 Đạt {metric.usedSessions}/{metric.maxSessions} buổi
+                        <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-red-50 text-red-800 border border-red-300 inline-flex items-center gap-1">
+                          🔴 Vượt {metric.diffPeriods} tiết
                         </span>
                       );
                     } else if (metric.isUnderPeriods) {
                       statusBadge = (
-                        <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-50 text-blue-900 border border-blue-200">
-                          🔵 Thiếu {Math.abs(metric.diffPeriods)} tiết
+                        <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-300 inline-flex items-center gap-1">
+                          🟡 Thiếu {Math.abs(metric.diffPeriods)} tiết
+                        </span>
+                      );
+                    } else if (metric.isAtMaxSessions) {
+                      statusBadge = (
+                        <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-200 inline-flex items-center gap-1">
+                          🟠 Đạt {metric.usedSessions}/{metric.maxSessions} buổi
                         </span>
                       );
                     }
                   }
 
-                  // Format "Tải dạy": e.g. "15/23 · 4/7 buổi"
+                  // Workload Display: e.g. "15/23 tiết"
                   const loadDisplay = metric
-                    ? `${metric.assignedPeriods}/${metric.referenceQuota} · ${metric.usedSessions}/${metric.maxSessions} buổi`
-                    : '—';
+                    ? `${metric.assignedPeriods}/${metric.referenceQuota} tiết`
+                    : `${a.periodsPerWeek} tiết`;
 
                   return (
                     <tr key={a.id} className="hover:bg-slate-50/90 transition-colors">
-                      {/* Teacher Name (Clickable to filter) */}
-                      <td className="p-3 pl-4">
+                      {/* GIÁO VIÊN */}
+                      <td className="p-3.5 pl-5">
                         <button
                           onClick={() =>
                             setSelectedTeacherId(selectedTeacherId === a.teacherId ? 'all' : a.teacherId)
                           }
-                          className="font-bold text-slate-900 hover:text-indigo-600 text-left hover:underline flex items-center gap-1.5 group"
+                          className="font-bold text-slate-900 hover:text-indigo-600 text-left hover:underline flex items-center gap-1.5 cursor-pointer group"
                           title="Click để lọc tất cả phân công của giáo viên này"
                         >
                           <span>{tch ? tch.name : 'N/A'}</span>
@@ -535,8 +539,8 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
                         </button>
                       </td>
 
-                      {/* Subject */}
-                      <td className="p-3">
+                      {/* MÔN */}
+                      <td className="p-3.5">
                         {sub ? (
                           <span
                             className="px-2.5 py-1 rounded-lg text-white font-bold text-[11px] shadow-2xs inline-block"
@@ -549,50 +553,50 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
                         )}
                       </td>
 
-                      {/* Class (Clickable to filter) */}
-                      <td className="p-3">
+                      {/* LỚP */}
+                      <td className="p-3.5">
                         <button
                           onClick={() =>
                             setSelectedClassId(selectedClassId === a.classId ? 'all' : a.classId)
                           }
-                          className="font-bold text-indigo-700 hover:text-indigo-900 text-xs hover:underline"
+                          className="font-bold text-indigo-700 hover:text-indigo-900 text-xs hover:underline cursor-pointer"
                           title="Click để lọc phân công theo lớp này"
                         >
                           {cls ? `Lớp ${cls.name}` : 'N/A'}
                         </button>
                       </td>
 
-                      {/* Periods per week */}
-                      <td className="p-3">
+                      {/* TIẾT/TUẦN */}
+                      <td className="p-3.5">
                         <span className="font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                          {a.periodsPerWeek} tiết/tuần
+                          {a.periodsPerWeek} tiết
                         </span>
                       </td>
 
-                      {/* Tải dạy (Workload & Session usage) */}
-                      <td className="p-3 font-semibold text-slate-800">
+                      {/* TẢI DẠY */}
+                      <td className="p-3.5 font-semibold text-slate-800">
                         <span className="bg-slate-100/90 px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-bold text-slate-900">
                           {loadDisplay}
                         </span>
                       </td>
 
-                      {/* Status */}
-                      <td className="p-3">{statusBadge}</td>
+                      {/* TRẠNG THÁI */}
+                      <td className="p-3.5">{statusBadge}</td>
 
-                      {/* Actions */}
-                      <td className="p-3 text-right pr-4">
-                        <div className="flex items-center justify-end gap-1">
+                      {/* THAO TÁC */}
+                      <td className="p-3.5 text-right pr-5">
+                        <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => openEditModal(a)}
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                            title="Sửa phân công"
+                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                            title="✏️ Chỉnh sửa phân công"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleInitiateDelete(a)}
-                            className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Xóa phân công"
+                            className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            title="🗑️ Xóa phân công"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -621,6 +625,7 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
       {/* Single Assignment Edit Modal */}
       {editingAssignment && (() => {
         const selTeacher = teachers.find((t) => t.id === teacherId);
+        const selSubject = subjects.find((s) => s.id === subjectId);
         const currentOtherAssigned = assignments
           .filter((a) => a.teacherId === teacherId && a.id !== editingAssignment.id)
           .reduce((sum, a) => sum + a.periodsPerWeek, 0);
@@ -631,14 +636,17 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
 
         return (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-100 space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                <h3 className="font-bold text-slate-900 text-sm uppercase tracking-wide">
-                  Sửa Phân công Chuyên môn
+            <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto">
+              
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="font-extrabold text-slate-900 text-base uppercase tracking-wide flex items-center gap-2">
+                  <Edit2 className="w-5 h-5 text-indigo-600" />
+                  <span>SỬA PHÂN CÔNG CHUYÊN MÔN</span>
                 </h3>
                 <button
                   onClick={() => setEditingAssignment(null)}
-                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -656,93 +664,152 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
                     periodsPerWeek,
                   });
                   setEditingAssignment(null);
-                  setSuccessToast('✅ Đã cập nhật phân công.');
+                  setSuccessToast('✅ Đã cập nhật phân công chuyên môn.');
                   setTimeout(() => setSuccessToast(null), 3000);
                 }}
-                className="space-y-3 text-xs"
+                className="space-y-4 text-xs"
               >
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Giáo viên giảng dạy</label>
-                  <select
-                    required
-                    value={teacherId}
-                    onChange={(e) => setTeacherId(e.target.value)}
-                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 font-bold"
-                  >
-                    {teachers.map((t) => {
-                      const cur = calculateTeacherWeeklyPeriods(t.id, assignments);
-                      const max = getTeacherMaxWeeklyPeriods(t);
-                      return (
-                        <option key={t.id} value={t.id}>
-                          {t.name} ({t.code || 'GV'}) – Đã PC: {cur}/{max} tiết
-                        </option>
-                      );
-                    })}
-                  </select>
+                {/* I. THÔNG TIN GIÁO VIÊN */}
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                  <div className="font-extrabold text-slate-900 uppercase text-[11px] flex items-center gap-1.5 text-indigo-900">
+                    <User className="w-4 h-4 text-indigo-600" />
+                    <span>I. THÔNG TIN GIÁO VIÊN</span>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Chọn giáo viên</label>
+                    <select
+                      required
+                      value={teacherId}
+                      onChange={(e) => setTeacherId(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-bold text-slate-900 cursor-pointer"
+                    >
+                      {teachers.map((t) => {
+                        const cur = calculateTeacherWeeklyPeriods(t.id, assignments);
+                        const max = getTeacherMaxWeeklyPeriods(t);
+                        return (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({t.code || 'GV'}) – Đã PC: {cur}/{max} tiết
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  {selTeacher && (
+                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 text-slate-600">
+                      <div>Mã GV: <b className="text-slate-900">{selTeacher.code}</b></div>
+                      <div>Loại GV: <b className="text-slate-900">{selTeacher.type === 'homeroom' ? 'GV Chủ nhiệm' : 'GV Bộ môn'}</b></div>
+                      <div>Môn chính: <b className="text-indigo-700">{subjects.find(s => s.id === selTeacher.mainSubjectId)?.name || 'Bộ môn'}</b></div>
+                      <div>Trạng thái: <b className="text-emerald-700">Đang hoạt động</b></div>
+                    </div>
+                  )}
                 </div>
 
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Môn học</label>
-                  <select
-                    required
-                    value={subjectId}
-                    onChange={(e) => {
-                      setSubjectId(e.target.value);
-                      const sub = subjects.find((s) => s.id === e.target.value);
-                      if (sub) setPeriodsPerWeek(sub.defaultPeriodsPerWeek);
-                    }}
-                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 font-bold"
-                  >
-                    {subjects.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.defaultPeriodsPerWeek} tiết/tuần)
-                      </option>
-                    ))}
-                  </select>
+                {/* II. ĐỊNH MỨC */}
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                  <div className="font-extrabold text-slate-900 uppercase text-[11px] flex items-center gap-1.5 text-purple-900">
+                    <Clock className="w-4 h-4 text-purple-600" />
+                    <span>II. ĐỊNH MỨC GIẢNG DẠY</span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-[11px] text-center font-bold">
+                    <div className="p-2 bg-white border border-slate-200 rounded-lg">
+                      <div className="text-[10px] text-slate-500 font-normal">Định mức/tuần</div>
+                      <div className="text-purple-700 font-extrabold text-sm mt-0.5">{referenceQuota} tiết</div>
+                    </div>
+                    <div className="p-2 bg-white border border-slate-200 rounded-lg">
+                      <div className="text-[10px] text-slate-500 font-normal">Tối đa/ngày</div>
+                      <div className="text-slate-900 font-extrabold text-sm mt-0.5">{selTeacher?.maxPeriodsPerDay || 4} tiết</div>
+                    </div>
+                    <div className="p-2 bg-white border border-slate-200 rounded-lg">
+                      <div className="text-[10px] text-slate-500 font-normal">Số buổi tối đa</div>
+                      <div className="text-emerald-700 font-extrabold text-sm mt-0.5">{selTeacher?.maxSessionsPerWeek || 6} buổi</div>
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Lớp học</label>
-                  <select
-                    required
-                    value={classId}
-                    onChange={(e) => setClassId(e.target.value)}
-                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 font-bold"
-                  >
-                    {classes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        Lớp {c.name} (Khối {c.grade})
-                      </option>
-                    ))}
-                  </select>
+                {/* III. PHÂN CÔNG */}
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                  <div className="font-extrabold text-slate-900 uppercase text-[11px] flex items-center gap-1.5 text-blue-900">
+                    <Layers className="w-4 h-4 text-blue-600" />
+                    <span>III. CHI TIẾT PHÂN CÔNG</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Môn học</label>
+                      <select
+                        required
+                        value={subjectId}
+                        onChange={(e) => {
+                          setSubjectId(e.target.value);
+                          const sub = subjects.find((s) => s.id === e.target.value);
+                          if (sub) setPeriodsPerWeek(sub.defaultPeriodsPerWeek);
+                        }}
+                        className="w-full p-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-bold text-slate-900 cursor-pointer"
+                      >
+                        {subjects.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.defaultPeriodsPerWeek}t)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Lớp học</label>
+                      <select
+                        required
+                        value={classId}
+                        onChange={(e) => setClassId(e.target.value)}
+                        className="w-full p-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-bold text-slate-900 cursor-pointer"
+                      >
+                        {classes.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            Lớp {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Số tiết phân công / tuần</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={30}
+                      required
+                      value={periodsPerWeek}
+                      onChange={(e) => setPeriodsPerWeek(Number(e.target.value))}
+                      className="w-full p-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-bold text-slate-900"
+                    />
+                  </div>
                 </div>
 
+                {/* IV. GHI CHÚ */}
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Số tiết phân công / tuần</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Ghi chú phân công</label>
                   <input
-                    type="number"
-                    min={1}
-                    max={30}
-                    required
-                    value={periodsPerWeek}
-                    onChange={(e) => setPeriodsPerWeek(Number(e.target.value))}
-                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 font-bold"
+                    type="text"
+                    placeholder="Ghi chú thêm (không bắt buộc)..."
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 font-medium"
                   />
                 </div>
 
-                {/* Reference Quota Info / Notice Box */}
+                {/* Warning / Status Notice */}
                 {isExcess ? (
                   <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs space-y-1">
                     <div className="font-bold text-amber-800 flex items-center gap-1.5">
                       <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>🟠 DƯ {overflow} TIẾT SO VỚI ĐỊNH MỨC THAM CHIẾU</span>
+                      <span>DƯ {overflow} TIẾT SO VỚI ĐỊNH MỨC THAM CHIẾU</span>
                     </div>
                     <div>
                       Tổng tiết sau khi sửa: <b>{totalAfterAdding} tiết/tuần</b> (Định mức tham chiếu: {referenceQuota} tiết)
                     </div>
-                    <p className="text-[11px] text-amber-700 italic">
-                      * Lưu ý: Định mức tham chiếu dùng để theo dõi, không chặn thao tác lưu phân công.
-                    </p>
                   </div>
                 ) : (
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 text-[11px]">
@@ -754,13 +821,13 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setEditingAssignment(null)}
-                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 cursor-pointer"
                   >
                     Hủy
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-500 shadow-2xs"
+                    className="px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-500 shadow-2xs cursor-pointer"
                   >
                     Lưu cập nhật
                   </button>
@@ -771,7 +838,7 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
         );
       })()}
 
-      {/* Warning Modal when Assignment is already used in Timetable */}
+      {/* Delete Warning Modal (when assignment used in timetable) */}
       {deleteWarningInfo && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-red-100 space-y-4">
@@ -810,7 +877,7 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
               <button
                 type="button"
                 onClick={() => setDeleteWarningInfo(null)}
-                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs shadow-2xs"
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs shadow-2xs cursor-pointer"
               >
                 Đóng
               </button>
@@ -861,14 +928,14 @@ export const AssignmentsView: React.FC<AssignmentsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setDeleteConfirmTarget(null)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50"
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="button"
                   onClick={handleConfirmDelete}
-                  className="px-5 py-2 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-500 shadow-2xs transition-all"
+                  className="px-5 py-2 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-500 shadow-2xs transition-all cursor-pointer"
                 >
                   Xóa phân công
                 </button>

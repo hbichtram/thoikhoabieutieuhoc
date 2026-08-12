@@ -534,6 +534,11 @@ export default function App() {
           {activeTab === 'overview' && (
             <DashboardView
               stats={stats}
+              cells={cells}
+              teachers={teachers}
+              classes={classes}
+              subjects={subjects}
+              assignments={assignments}
               onNavigateTab={(tab) => setActiveTab(tab)}
             />
           )}

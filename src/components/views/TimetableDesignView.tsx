@@ -237,7 +237,22 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
     updateGridCells(updated);
   };
 
-  // Place Assignment into Slot (or Move Cell)
+  // Helper to match slot irrespective of afternoon period indexing (1..3 vs 5..7)
+  const isSameSlot = (
+    shift1: PeriodShift,
+    p1: number,
+    shift2: PeriodShift,
+    p2: number
+  ) => {
+    if (shift1 !== shift2) return false;
+    if (p1 === p2) return true;
+    if (shift1 === 'afternoon') {
+      return p1 === p2 + 4 || p1 + 4 === p2;
+    }
+    return false;
+  };
+
+  // Place Assignment into Slot (or Move Cell) - STRICTLY 1 PERIOD PER DROP
   const placeAssignmentIntoSlot = (
     assignmentId: string,
     targetDay: DayOfWeek,
@@ -248,51 +263,108 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
     const assignment = assignments.find((a) => a.id === assignmentId);
     if (!assignment) return;
 
-    // Check if target cell already has a scheduled cell for the target class
+    // Rule 1: If dragging from unassigned tray (new placement), check remaining periods
+    if (!sourceCellId) {
+      const placedCount = workingCells.filter((c) => c.assignmentId === assignment.id).length;
+      if (placedCount >= assignment.periodsPerWeek) {
+        alert(
+          `🔴 ĐÃ XẾP ĐỦ TIẾT: Phân công này đã xếp đủ ${assignment.periodsPerWeek}/${assignment.periodsPerWeek} tiết/tuần!`
+        );
+        return;
+      }
+    }
+
+    // Determine target class ID
     const targetClassId = viewMode === 'class' ? selectedClassId : assignment.classId;
 
+    // Check if target slot is occupied by an existing cell for this class
     const existingCell = workingCells.find(
       (c) =>
         c.classId === targetClassId &&
         c.day === targetDay &&
-        c.shift === targetShift &&
-        c.periodNumber === targetPeriodNumber
+        isSameSlot(c.shift, c.periodNumber, targetShift, targetPeriodNumber)
     );
 
-    if (existingCell && existingCell.isLocked) {
-      alert('Không thể đè lên ô đã bị khóa 🔒!');
+    if (existingCell && sourceCellId !== existingCell.id) {
+      if (existingCell.isLocked) {
+        alert('🔒 Không thể đè lên ô đã bị khóa!');
+      } else {
+        alert('🔴 Ô này đã có tiết học. Vui lòng chọn ô trống!');
+      }
       return;
     }
 
-    // Check Hard Constraint: Max 6 sessions per week for teacher
-    const teacherSessionSet = getTeacherSessions(
-      assignment.teacherId,
-      workingCells.filter((c) => c.id !== sourceCellId)
+    // Check disabled slot by school configuration
+    const isDisabledSchool = timeConfig.disabledSlots.some(
+      (d) =>
+        d.day === targetDay &&
+        isSameSlot(d.shift, d.periodNumber, targetShift, targetPeriodNumber)
     );
-    const isExistingSession = teacherSessionSet.has(`${targetDay}_${targetShift}`);
-    if (!isExistingSession && teacherSessionSet.size >= 6) {
-      const tch = teachers.find((t) => t.id === assignment.teacherId);
+    if (isDisabledSchool) {
+      alert('🔴 KHÔNG THỂ XẾP: Ô này đã bị nhà trường tắt/khóa trong cấu hình!');
+      return;
+    }
+
+    // Check teacher unavailable slots
+    const tch = teachers.find((t) => t.id === assignment.teacherId);
+    if (tch) {
+      const isUnavailable = tch.unavailableSlots.some(
+        (u) =>
+          u.day === targetDay &&
+          isSameSlot(u.shift, u.periodNumber, targetShift, targetPeriodNumber)
+      );
+      if (isUnavailable) {
+        alert(`🔴 KHÔNG THỂ XẾP: Giáo viên ${tch.name} đã đăng ký bận vào khung giờ này!`);
+        return;
+      }
+    }
+
+    // Check teacher overlap conflict (teacher teaching another class at same slot)
+    const teacherConflict = workingCells.find(
+      (c) =>
+        c.teacherId === assignment.teacherId &&
+        c.day === targetDay &&
+        isSameSlot(c.shift, c.periodNumber, targetShift, targetPeriodNumber) &&
+        c.id !== sourceCellId &&
+        c.classId !== targetClassId
+    );
+    if (teacherConflict) {
+      const conflictClass = classes.find((c) => c.id === teacherConflict.classId);
       const dayLabel = `Thứ ${targetDay.replace('T', '')}`;
       const shiftLabel = targetShift === 'morning' ? 'Sáng' : 'Chiều';
       alert(
-        `🔴 KHÔNG THỂ XẾP: Giáo viên ${tch?.name || 'này'} đã dạy đủ 6 buổi/tuần. Việc xếp tiết này vào ${dayLabel} ${shiftLabel} sẽ tạo thành buổi thứ 7 (vượt quá giới hạn tối đa 6 buổi/tuần)!`
+        `🔴 XUNG ĐỘT LỊCH DẠY: Giáo viên ${tch?.name || 'này'} đã có tiết dạy tại Lớp ${
+          conflictClass?.name || ''
+        } vào ${dayLabel} (${shiftLabel} Tiết ${targetPeriodNumber})!`
       );
       return;
     }
 
-    // Remove existing cell in target slot if present (or source cell if moving)
-    let updatedCells = workingCells.filter((c) => {
+    // Check Hard Constraint: Max sessions per week for teacher
+    const teacherSessionSet = getTeacherSessions(
+      assignment.teacherId,
+      workingCells.filter((c) => c.id !== sourceCellId)
+    );
+    const maxSessions = tch ? getTeacherMaxSessionsPerWeek(tch) : 6;
+    const isExistingSession = teacherSessionSet.has(`${targetDay}_${targetShift}`);
+    if (!isExistingSession && teacherSessionSet.size >= maxSessions) {
+      const dayLabel = `Thứ ${targetDay.replace('T', '')}`;
+      const shiftLabel = targetShift === 'morning' ? 'Sáng' : 'Chiều';
+      alert(
+        `🔴 KHÔNG THỂ XẾP: Giáo viên ${tch?.name || 'này'} đã dạy đủ ${maxSessions} buổi/tuần. Việc xếp tiết này vào ${dayLabel} ${shiftLabel} sẽ tạo thành buổi thứ ${
+          teacherSessionSet.size + 1
+        } (vượt quá giới hạn tối đa ${maxSessions} buổi/tuần)!`
+      );
+      return;
+    }
+
+    // Remove source cell if moving an existing cell
+    const updatedCells = workingCells.filter((c) => {
       if (sourceCellId && c.id === sourceCellId) return false;
-      if (
-        c.classId === targetClassId &&
-        c.day === targetDay &&
-        c.shift === targetShift &&
-        c.periodNumber === targetPeriodNumber
-      )
-        return false;
       return true;
     });
 
+    // Place EXACTLY ONE single period into the target cell
     const newCell: ScheduleCell = {
       id: `sc_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       classId: targetClassId,
@@ -874,13 +946,9 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                           const shift: PeriodShift = row.shift;
                           const pNum = row.periodNumber;
 
-                          // Find cell in slot (matching both periodNumber 1..3 and 5..7 for afternoon)
+                          // Find cell in slot
                           const cellInSlot = workingCells.find((c) => {
-                            const matchShift = c.shift === shift;
-                            const matchPeriod =
-                              c.periodNumber === pNum ||
-                              (shift === 'afternoon' && c.periodNumber === pNum + 4);
-                            if (!matchShift || !matchPeriod) return false;
+                            if (!isSameSlot(c.shift, c.periodNumber, shift, pNum)) return false;
 
                             return viewMode === 'class'
                               ? c.classId === selectedClassId
@@ -901,16 +969,14 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                           const suggestion = suggestions.find(
                             (s) =>
                               s.day === day &&
-                              s.shift === shift &&
-                              (s.periodNumber === pNum || (shift === 'afternoon' && s.periodNumber === pNum + 4))
+                              isSameSlot(s.shift, s.periodNumber, shift, pNum)
                           );
 
                           // Check disabled slot
                           const isDisabledSchool = timeConfig.disabledSlots.some(
                             (d) =>
                               d.day === day &&
-                              d.shift === shift &&
-                              (d.periodNumber === pNum || (shift === 'afternoon' && d.periodNumber === pNum + 4))
+                              isSameSlot(d.shift, d.periodNumber, shift, pNum)
                           );
 
                           const isHovered =
@@ -930,12 +996,14 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                                 e.preventDefault();
                                 setHoveredSlot(null);
                                 if (draggedItem) {
+                                  const itemToPlace = draggedItem;
+                                  setDraggedItem(null);
                                   placeAssignmentIntoSlot(
-                                    draggedItem.assignmentId,
+                                    itemToPlace.assignmentId,
                                     day,
                                     shift,
                                     pNum,
-                                    draggedItem.sourceCellId
+                                    itemToPlace.sourceCellId
                                   );
                                 }
                               }}
