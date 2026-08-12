@@ -13,7 +13,7 @@ export const initialTeachers: Teacher[] = [
     maxPeriodsPerDay: 4,
     notes: 'Phụ trách môn Tin học toàn trường',
     unavailableSlots: [
-      { day: 'T6', shift: 'afternoon', periodNumber: 5, reason: 'Khóa thứ 6 tiết 5 chiều' },
+      { day: 'T6', shift: 'afternoon', periodNumber: 1, reason: 'Khóa thứ 6 tiết 1 chiều' },
     ],
   },
   {
@@ -144,10 +144,10 @@ export const initialTimeConfig: TimeConfig = {
   schoolYear: '2026–2027',
   semester: 'I',
   enabledDays: ['T2', 'T3', 'T4', 'T5', 'T6'],
-  morningPeriodsCount: 5,
-  afternoonPeriodsCount: 4,
+  morningPeriodsCount: 4,
+  afternoonPeriodsCount: 3,
   disabledSlots: [
-    { day: 'T6', shift: 'afternoon', periodNumber: 4 }, // T6 chiều nghỉ tiết 4
+    { day: 'T6', shift: 'afternoon', periodNumber: 3 }, // T6 chiều nghỉ tiết 3
   ],
 };
 

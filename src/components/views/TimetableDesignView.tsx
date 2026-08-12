@@ -13,8 +13,9 @@ import {
   RotateCw,
   Undo2,
   Redo2,
-  Clock,
   ShieldAlert,
+  Users,
+  GraduationCap,
 } from 'lucide-react';
 import {
   ScheduleCell,
@@ -31,9 +32,7 @@ import { getSlotSuggestions, checkFullSchedule } from '../../utils/conflictCheck
 import { getStoredLastSavedAt, setStoredLastSavedAt } from '../../services/storage';
 import { runAutoScheduler, AutoScheduleResult } from '../../utils/autoScheduler';
 import {
-  checkTeacherSessionLimit,
-  getTeacherSessions,
-  getTeacherGapPeriods,
+  getTeacherSessionCount,
   getTeacherMaxSessionsPerWeek,
 } from '../../utils/teacherUtils';
 
@@ -48,6 +47,21 @@ interface TimetableDesignViewProps {
   onHasUnsavedChangesChange?: (hasUnsaved: boolean) => void;
 }
 
+// Normalization helper for legacy cells (e.g. afternoon cells stored with periodNumber 5..7)
+const normalizeCell = (c: ScheduleCell): ScheduleCell => {
+  if (c.shift === 'afternoon' && c.periodNumber >= 5) {
+    return { ...c, periodNumber: c.periodNumber - 4 };
+  }
+  if (c.periodNumber >= 5) {
+    return { ...c, shift: 'afternoon', periodNumber: c.periodNumber - 4 };
+  }
+  return c;
+};
+
+const normalizeCells = (cellList: ScheduleCell[]): ScheduleCell[] => {
+  return cellList.map(normalizeCell);
+};
+
 export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
   cells,
   teachers,
@@ -58,12 +72,12 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
   onUpdateCells,
   onHasUnsavedChangesChange,
 }) => {
-  // Working schedule state vs last saved schedule state
-  const [savedCells, setSavedCells] = useState<ScheduleCell[]>(cells);
-  const [workingCells, setWorkingCells] = useState<ScheduleCell[]>(cells);
+  // Working schedule state vs last saved schedule state with normalization
+  const [savedCells, setSavedCells] = useState<ScheduleCell[]>(() => normalizeCells(cells));
+  const [workingCells, setWorkingCells] = useState<ScheduleCell[]>(() => normalizeCells(cells));
 
   // History stack for Undo / Redo
-  const [history, setHistory] = useState<ScheduleCell[][]>([cells]);
+  const [history, setHistory] = useState<ScheduleCell[][]>(() => [normalizeCells(cells)]);
   const [historyIndex, setHistoryIndex] = useState<number>(0);
 
   // Last saved timestamp
@@ -105,10 +119,11 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
 
   // Keep savedCells & workingCells in sync if external props `cells` change initially or after load
   useEffect(() => {
-    if (JSON.stringify(cells) !== JSON.stringify(savedCells) && historyIndex === 0) {
-      setSavedCells(cells);
-      setWorkingCells(cells);
-      setHistory([cells]);
+    const normalized = normalizeCells(cells);
+    if (JSON.stringify(normalized) !== JSON.stringify(savedCells) && historyIndex === 0) {
+      setSavedCells(normalized);
+      setWorkingCells(normalized);
+      setHistory([normalized]);
       setHistoryIndex(0);
     }
   }, [cells]);
@@ -136,11 +151,12 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
 
   // Helper to mutate working cells with history tracking
   const updateGridCells = (newCells: ScheduleCell[]) => {
+    const normalized = normalizeCells(newCells);
     const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push(newCells);
+    newHistory.push(normalized);
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
-    setWorkingCells(newCells);
+    setWorkingCells(normalized);
   };
 
   // Undo Handler
@@ -211,6 +227,8 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
     };
   });
 
+  const totalUnassignedCount = unassignedTrayItems.reduce((acc, item) => acc + Math.max(0, item.remainingCount), 0);
+
   // Handle slot suggestion toggle
   const handleToggleSuggestion = (a: Assignment) => {
     if (suggestingAssignment?.id === a.id) {
@@ -237,21 +255,6 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
     updateGridCells(updated);
   };
 
-  // Helper to match slot irrespective of afternoon period indexing (1..3 vs 5..7)
-  const isSameSlot = (
-    shift1: PeriodShift,
-    p1: number,
-    shift2: PeriodShift,
-    p2: number
-  ) => {
-    if (shift1 !== shift2) return false;
-    if (p1 === p2) return true;
-    if (shift1 === 'afternoon') {
-      return p1 === p2 + 4 || p1 + 4 === p2;
-    }
-    return false;
-  };
-
   // Place Assignment into Slot (or Move Cell) - STRICTLY 1 PERIOD PER DROP
   const placeAssignmentIntoSlot = (
     assignmentId: string,
@@ -263,29 +266,17 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
     const assignment = assignments.find((a) => a.id === assignmentId);
     if (!assignment) return;
 
-    // Rule 1: If dragging from unassigned tray (new placement), check remaining periods
-    if (!sourceCellId) {
-      const placedCount = workingCells.filter((c) => c.assignmentId === assignment.id).length;
-      if (placedCount >= assignment.periodsPerWeek) {
-        alert(
-          `🔴 ĐÃ XẾP ĐỦ TIẾT: Phân công này đã xếp đủ ${assignment.periodsPerWeek}/${assignment.periodsPerWeek} tiết/tuần!`
-        );
-        return;
-      }
-    }
+    // Check if target slot already has a cell in current view mode
+    const existingCell = workingCells.find((c) => {
+      if (c.day !== targetDay) return false;
+      if (c.shift !== targetShift) return false;
+      if (c.periodNumber !== targetPeriodNumber) return false;
+      return viewMode === 'class'
+        ? c.classId === selectedClassId
+        : c.teacherId === selectedTeacherId;
+    });
 
-    // Determine target class ID
-    const targetClassId = viewMode === 'class' ? selectedClassId : assignment.classId;
-
-    // Check if target slot is occupied by an existing cell for this class
-    const existingCell = workingCells.find(
-      (c) =>
-        c.classId === targetClassId &&
-        c.day === targetDay &&
-        isSameSlot(c.shift, c.periodNumber, targetShift, targetPeriodNumber)
-    );
-
-    if (existingCell && sourceCellId !== existingCell.id) {
+    if (existingCell) {
       if (existingCell.isLocked) {
         alert('🔒 Không thể đè lên ô đã bị khóa!');
       } else {
@@ -294,268 +285,70 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
       return;
     }
 
-    // Check disabled slot by school configuration
-    const isDisabledSchool = timeConfig.disabledSlots.some(
-      (d) =>
-        d.day === targetDay &&
-        isSameSlot(d.shift, d.periodNumber, targetShift, targetPeriodNumber)
-    );
-    if (isDisabledSchool) {
-      alert('🔴 KHÔNG THỂ XẾP: Ô này đã bị nhà trường tắt/khóa trong cấu hình!');
-      return;
-    }
-
-    // Check teacher unavailable slots
-    const tch = teachers.find((t) => t.id === assignment.teacherId);
-    if (tch) {
-      const isUnavailable = tch.unavailableSlots.some(
-        (u) =>
-          u.day === targetDay &&
-          isSameSlot(u.shift, u.periodNumber, targetShift, targetPeriodNumber)
-      );
-      if (isUnavailable) {
-        alert(`🔴 KHÔNG THỂ XẾP: Giáo viên ${tch.name} đã đăng ký bận vào khung giờ này!`);
+    // Rule 1: Dragging from unassigned tray (new placement) -> STRICTLY 1 PERIOD
+    if (!sourceCellId) {
+      const placedCount = workingCells.filter((c) => c.assignmentId === assignment.id).length;
+      if (placedCount >= assignment.periodsPerWeek) {
+        alert('⚠️ Môn học này đã xếp đủ số tiết theo quy định!');
         return;
       }
-    }
 
-    // Check teacher overlap conflict (teacher teaching another class at same slot)
-    const teacherConflict = workingCells.find(
-      (c) =>
-        c.teacherId === assignment.teacherId &&
-        c.day === targetDay &&
-        isSameSlot(c.shift, c.periodNumber, targetShift, targetPeriodNumber) &&
-        c.id !== sourceCellId &&
-        c.classId !== targetClassId
-    );
-    if (teacherConflict) {
-      const conflictClass = classes.find((c) => c.id === teacherConflict.classId);
-      const dayLabel = `Thứ ${targetDay.replace('T', '')}`;
-      const shiftLabel = targetShift === 'morning' ? 'Sáng' : 'Chiều';
-      alert(
-        `🔴 XUNG ĐỘT LỊCH DẠY: Giáo viên ${tch?.name || 'này'} đã có tiết dạy tại Lớp ${
-          conflictClass?.name || ''
-        } vào ${dayLabel} (${shiftLabel} Tiết ${targetPeriodNumber})!`
+      const newCell: ScheduleCell = {
+        id: `sc_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        classId: assignment.classId,
+        day: targetDay,
+        shift: targetShift,
+        periodNumber: targetPeriodNumber,
+        assignmentId: assignment.id,
+        subjectId: assignment.subjectId,
+        teacherId: assignment.teacherId,
+        isLocked: false,
+      };
+
+      updateGridCells([...workingCells, newCell]);
+    } else {
+      // Rule 2: Moving an existing placed cell to a new target slot -> STRICTLY 1 PERIOD MOVE
+      const updated = workingCells.map((c) =>
+        c.id === sourceCellId
+          ? {
+              ...c,
+              day: targetDay,
+              shift: targetShift,
+              periodNumber: targetPeriodNumber,
+            }
+          : c
       );
-      return;
-    }
-
-    // Check Hard Constraint: Max sessions per week for teacher
-    const teacherSessionSet = getTeacherSessions(
-      assignment.teacherId,
-      workingCells.filter((c) => c.id !== sourceCellId)
-    );
-    const maxSessions = tch ? getTeacherMaxSessionsPerWeek(tch) : 6;
-    const isExistingSession = teacherSessionSet.has(`${targetDay}_${targetShift}`);
-    if (!isExistingSession && teacherSessionSet.size >= maxSessions) {
-      const dayLabel = `Thứ ${targetDay.replace('T', '')}`;
-      const shiftLabel = targetShift === 'morning' ? 'Sáng' : 'Chiều';
-      alert(
-        `🔴 KHÔNG THỂ XẾP: Giáo viên ${tch?.name || 'này'} đã dạy đủ ${maxSessions} buổi/tuần. Việc xếp tiết này vào ${dayLabel} ${shiftLabel} sẽ tạo thành buổi thứ ${
-          teacherSessionSet.size + 1
-        } (vượt quá giới hạn tối đa ${maxSessions} buổi/tuần)!`
-      );
-      return;
-    }
-
-    // Remove source cell if moving an existing cell
-    const updatedCells = workingCells.filter((c) => {
-      if (sourceCellId && c.id === sourceCellId) return false;
-      return true;
-    });
-
-    // Place EXACTLY ONE single period into the target cell
-    const newCell: ScheduleCell = {
-      id: `sc_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      classId: targetClassId,
-      day: targetDay,
-      shift: targetShift,
-      periodNumber: targetPeriodNumber,
-      assignmentId: assignment.id,
-      subjectId: assignment.subjectId,
-      teacherId: assignment.teacherId,
-      isLocked: false,
-    };
-
-    updatedCells.push(newCell);
-    updateGridCells(updatedCells);
-
-    // Refresh suggestions if active
-    if (suggestingAssignment) {
-      const suggs = getSlotSuggestions(
-        suggestingAssignment,
-        teachers,
-        classes,
-        subjects,
-        timeConfig,
-        updatedCells
-      );
-      setSuggestions(suggs);
+      updateGridCells(updated);
     }
   };
 
-  // Validate timetable for hard errors before saving
-  const validateTimetable = (targetCells: ScheduleCell[]): string[] => {
-    const errors: string[] = [];
+  // Open Save Confirmation or Error Modal
+  const handleInitiateSave = () => {
+    const stats = checkFullSchedule(
+      teachers,
+      classes,
+      subjects,
+      assignments,
+      timeConfig,
+      workingCells
+    );
 
-    const teacherMap = new Map<string, Teacher>(teachers.map((t) => [t.id, t]));
-    const classMap = new Map<string, ClassItem>(classes.map((c) => [c.id, c]));
-    const subjectMap = new Map<string, Subject>(subjects.map((s) => [s.id, s]));
-    const assignmentMap = new Map<string, Assignment>(assignments.map((a) => [a.id, a]));
+    const criticalIssues = stats.issues.filter((i) => i.severity === 'critical');
 
-    // 1. Check cell missing required data
-    targetCells.forEach((cell) => {
-      const dayName = `Thứ ${cell.day.replace('T', '')}`;
-      const shiftName = cell.shift === 'morning' ? 'Sáng' : 'Chiều';
-      const slotText = `${dayName} - Tiết ${cell.periodNumber} (${shiftName})`;
-
-      const cls = classMap.get(cell.classId);
-      const className = cls ? `Lớp ${cls.name}` : 'Lớp ?';
-
-      if (!cell.teacherId || !teacherMap.has(cell.teacherId)) {
-        errors.push(`🔴 ${slotText}: Tiết học tại ${className} thiếu thông tin giáo viên.`);
-      }
-
-      if (!cell.subjectId || !subjectMap.has(cell.subjectId)) {
-        errors.push(`🔴 ${slotText}: Tiết học tại ${className} thiếu thông tin môn học.`);
-      }
-
-      if (!cell.assignmentId || !assignmentMap.has(cell.assignmentId)) {
-        errors.push(
-          `🔴 ${slotText}: Tiết học tại ${className} không thuộc phân công chuyên môn hợp lệ.`
-        );
-      }
-
-      // Check teacher unavailable slots
-      const tch = teacherMap.get(cell.teacherId);
-      if (tch) {
-        const isUnavailable = tch.unavailableSlots.some(
-          (u) =>
-            u.day === cell.day && u.shift === cell.shift && u.periodNumber === cell.periodNumber
-        );
-        if (isUnavailable) {
-          errors.push(
-            `🔴 ${slotText}: ${tch.name} bị xếp tiết vào khung giờ giáo viên đã đăng ký bận.`
-          );
-        }
-      }
-
-      // Check disabled school slots
-      const isDisabledSchool = timeConfig.disabledSlots.some(
-        (d) =>
-          d.day === cell.day && d.shift === cell.shift && d.periodNumber === cell.periodNumber
-      );
-      if (isDisabledSchool) {
-        errors.push(`🔴 ${slotText}: ${className} bị xếp tiết vào khung thời gian trường đã tắt.`);
-      }
-    });
-
-    // 2. Check Teacher Overlap (1 teacher in 2 classes at same slot)
-    const slotTeacherMap = new Map<string, ScheduleCell[]>();
-    targetCells.forEach((cell) => {
-      const key = `${cell.teacherId}_${cell.day}_${cell.shift}_${cell.periodNumber}`;
-      if (!slotTeacherMap.has(key)) slotTeacherMap.set(key, []);
-      slotTeacherMap.get(key)!.push(cell);
-    });
-
-    slotTeacherMap.forEach((cellGroup) => {
-      if (cellGroup.length > 1) {
-        const first = cellGroup[0];
-        const tch = teacherMap.get(first.teacherId);
-        const dayName = `Thứ ${first.day.replace('T', '')}`;
-        const shiftName = first.shift === 'morning' ? 'Sáng' : 'Chiều';
-        const classNames = cellGroup
-          .map((c) => classMap.get(c.classId)?.name || '?')
-          .join(', ');
-
-        errors.push(
-          `🔴 ${dayName} - Tiết ${first.periodNumber} (${shiftName}): ${
-            tch?.name || 'Giáo viên'
-          } đang dạy ${cellGroup.length} lớp cùng lúc (${classNames}).`
-        );
-      }
-    });
-
-    // 3. Check Class Overlap (1 class with 2 subjects/teachers at same slot)
-    const slotClassMap = new Map<string, ScheduleCell[]>();
-    targetCells.forEach((cell) => {
-      const key = `${cell.classId}_${cell.day}_${cell.shift}_${cell.periodNumber}`;
-      if (!slotClassMap.has(key)) slotClassMap.set(key, []);
-      slotClassMap.get(key)!.push(cell);
-    });
-
-    slotClassMap.forEach((cellGroup) => {
-      if (cellGroup.length > 1) {
-        const first = cellGroup[0];
-        const cls = classMap.get(first.classId);
-        const dayName = `Thứ ${first.day.replace('T', '')}`;
-        const shiftName = first.shift === 'morning' ? 'Sáng' : 'Chiều';
-        const subNames = cellGroup
-          .map((c) => subjectMap.get(c.subjectId)?.name || '?')
-          .join(', ');
-
-        errors.push(
-          `🔴 ${dayName} - Tiết ${first.periodNumber} (${shiftName}): Lớp ${
-            cls?.name || '?'
-          } có ${cellGroup.length} môn cùng lúc (${subNames}).`
-        );
-      }
-    });
-
-    // 4. Check extra periods per assignment
-    const assignmentPlacedCount = new Map<string, number>();
-    targetCells.forEach((c) => {
-      assignmentPlacedCount.set(c.assignmentId, (assignmentPlacedCount.get(c.assignmentId) || 0) + 1);
-    });
-
-    assignments.forEach((a) => {
-      const placed = assignmentPlacedCount.get(a.id) || 0;
-      if (placed > a.periodsPerWeek) {
-        const cls = classMap.get(a.classId);
-        const sub = subjectMap.get(a.subjectId);
-        const tch = teacherMap.get(a.teacherId);
-        errors.push(
-          `🔴 Lớp ${cls?.name || '?'} môn ${sub?.name || '?'} (${tch?.name || '?'}): Đã xếp ${placed}/${a.periodsPerWeek} tiết (thừa ${placed - a.periodsPerWeek} tiết).`
-        );
-      }
-    });
-
-    // 5. Check Teacher Max Sessions/Week (Hard Constraint)
-    teachers.forEach((tch) => {
-      const maxSessions = getTeacherMaxSessionsPerWeek(tch);
-      const sessions = getTeacherSessions(tch.id, targetCells);
-      if (sessions.size > maxSessions) {
-        errors.push(
-          `🔴 ${tch.name}: Bị xếp vào ${sessions.size}/${maxSessions} buổi/tuần (VƯỢT QUÁ GIỚI HẠN TỐI ĐA ${maxSessions} BUỔI/TUẦN).`
-        );
-      }
-    });
-
-    return errors;
-  };
-
-  // Trigger Save Process
-  const handleSaveButtonClick = () => {
-    if (!hasUnsavedChanges) {
-      setInfoToast('TKB hiện tại không có thay đổi cần lưu.');
-      setTimeout(() => setInfoToast(null), 3000);
-      return;
-    }
-
-    const errors = validateTimetable(workingCells);
-    if (errors.length > 0) {
-      setValidationErrors(errors);
+    if (criticalIssues.length > 0) {
+      setValidationErrors(criticalIssues.map((i) => i.message));
       setIsErrorModalOpen(true);
     } else {
       setIsConfirmSaveModalOpen(true);
     }
   };
 
-  // Perform Final Official Save to Persistence
+  // Execute Save
   const handleConfirmSave = () => {
     try {
-      onUpdateCells(workingCells);
-      setSavedCells(workingCells);
+      const normalizedWorking = normalizeCells(workingCells);
+      onUpdateCells(normalizedWorking);
+      setSavedCells(normalizedWorking);
 
       const now = new Date();
       const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} - ${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
@@ -572,36 +365,48 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
     }
   };
 
+  // Rows definition: MORNING (1..4) and AFTERNOON (1..3)
   const periodRows = [
-    { id: 'm1', label: 'T1', shift: 'morning' as PeriodShift, periodNumber: 1, isMorning: true },
-    { id: 'm2', label: 'T2', shift: 'morning' as PeriodShift, periodNumber: 2, isMorning: true },
-    { id: 'm3', label: 'T3', shift: 'morning' as PeriodShift, periodNumber: 3, isMorning: true },
-    { id: 'm4', label: 'T4', shift: 'morning' as PeriodShift, periodNumber: 4, isMorning: true },
-    { id: 'a5', label: 'T5', shift: 'afternoon' as PeriodShift, periodNumber: 1, isMorning: false },
-    { id: 'a6', label: 'T6', shift: 'afternoon' as PeriodShift, periodNumber: 2, isMorning: false },
-    { id: 'a7', label: 'T7', shift: 'afternoon' as PeriodShift, periodNumber: 3, isMorning: false },
+    { id: 'm1', label: 'Tiết 1', shift: 'morning' as PeriodShift, periodNumber: 1, isMorning: true },
+    { id: 'm2', label: 'Tiết 2', shift: 'morning' as PeriodShift, periodNumber: 2, isMorning: true },
+    { id: 'm3', label: 'Tiết 3', shift: 'morning' as PeriodShift, periodNumber: 3, isMorning: true },
+    { id: 'm4', label: 'Tiết 4', shift: 'morning' as PeriodShift, periodNumber: 4, isMorning: true },
+    { id: 'a1', label: 'Tiết 1', shift: 'afternoon' as PeriodShift, periodNumber: 1, isMorning: false },
+    { id: 'a2', label: 'Tiết 2', shift: 'afternoon' as PeriodShift, periodNumber: 2, isMorning: false },
+    { id: 'a3', label: 'Tiết 3', shift: 'afternoon' as PeriodShift, periodNumber: 3, isMorning: false },
   ];
 
+  // Stats calculation for active entity
+  const currentEntityPlacedPeriods = workingCells.filter((c) =>
+    viewMode === 'class' ? c.classId === selectedClassId : c.teacherId === selectedTeacherId
+  ).length;
+
+  const currentEntityRequiredPeriods = currentEntityAssignments.reduce((acc, a) => acc + a.periodsPerWeek, 0);
+
+  const teacherSessions = currentTeacher ? getTeacherSessionCount(selectedTeacherId, workingCells) : 0;
+  const teacherMaxSessions = currentTeacher ? getTeacherMaxSessionsPerWeek(currentTeacher) : 6;
+
   return (
-    <div className="p-3 max-w-[1700px] mx-auto h-[calc(100vh-68px)] flex flex-col space-y-3 overflow-hidden bg-slate-50/60">
-      {/* Top Action & View Switcher Bar (Compact ~60px height) */}
-      <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3 shrink-0">
-        {/* Left: View Mode Toggle & Dropdown & Stats Summary */}
-        <div className="flex flex-wrap items-center gap-3">
+    <div className="h-[calc(100vh-62px)] flex flex-col overflow-hidden bg-slate-100/70 font-sans">
+      {/* 1. COMPACT TOOLBAR HEADER (~50px) */}
+      <div className="bg-slate-900 text-white px-3.5 py-2 flex flex-wrap items-center justify-between gap-2.5 shrink-0 shadow-md z-10">
+        {/* Left Section: View Mode & Selector & Stats */}
+        <div className="flex flex-wrap items-center gap-2.5">
           {/* Mode Switcher */}
-          <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+          <div className="flex bg-slate-800 p-0.5 rounded-lg text-xs font-medium border border-slate-700">
             <button
               onClick={() => {
                 setViewMode('class');
                 setSuggestingAssignment(null);
               }}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
+              className={`px-3 py-1 rounded-md transition-all flex items-center gap-1.5 ${
                 viewMode === 'class'
-                  ? 'bg-blue-600 text-white shadow-sm font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-blue-600 text-white font-bold shadow-xs'
+                  : 'text-slate-300 hover:text-white'
               }`}
             >
-              Theo Lớp Học
+              <GraduationCap className="w-3.5 h-3.5" />
+              <span>Theo Lớp Học</span>
             </button>
 
             <button
@@ -609,186 +414,172 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                 setViewMode('teacher');
                 setSuggestingAssignment(null);
               }}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
+              className={`px-3 py-1 rounded-md transition-all flex items-center gap-1.5 ${
                 viewMode === 'teacher'
-                  ? 'bg-blue-600 text-white shadow-sm font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-blue-600 text-white font-bold shadow-xs'
+                  : 'text-slate-300 hover:text-white'
               }`}
             >
-              Theo Giáo Viên
+              <Users className="w-3.5 h-3.5" />
+              <span>Theo Giáo Viên</span>
             </button>
           </div>
 
-          {/* Entity Selector */}
+          {/* Selector Dropdown */}
           {viewMode === 'class' ? (
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-semibold text-slate-500">Lớp:</span>
-              <select
-                value={selectedClassId}
-                onChange={(e) => {
-                  setSelectedClassId(e.target.value);
-                  setSuggestingAssignment(null);
-                }}
-                className="p-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500"
-              >
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    Lớp {c.name} (Khối {c.grade})
-                  </option>
-                ))}
-              </select>
-            </div>
+            <select
+              value={selectedClassId}
+              onChange={(e) => setSelectedClassId(e.target.value)}
+              className="bg-slate-800 text-white border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+            >
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  Lớp {c.name} ({c.grade ? `Khối ${c.grade}` : 'Tiểu học'})
+                </option>
+              ))}
+            </select>
           ) : (
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-semibold text-slate-500">Giáo viên:</span>
-              <select
-                value={selectedTeacherId}
-                onChange={(e) => {
-                  setSelectedTeacherId(e.target.value);
-                  setSuggestingAssignment(null);
-                }}
-                className="p-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500"
-              >
-                {teachers.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.code})
-                  </option>
-                ))}
-              </select>
-            </div>
+            <select
+              value={selectedTeacherId}
+              onChange={(e) => setSelectedTeacherId(e.target.value)}
+              className="bg-slate-800 text-white border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+            >
+              {teachers.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.code})
+                </option>
+              ))}
+            </select>
           )}
 
-          {/* Stats Summary Badge for Active Entity */}
-          {viewMode === 'teacher' && currentTeacher && (() => {
-            const assignedPeriods = workingCells.filter((c) => c.teacherId === currentTeacher.id).length;
-            const standardQuota = currentTeacher.isHomeroom ? 20 : 23;
-            const diffPeriods = assignedPeriods - standardQuota;
-            const activeSessions = getTeacherSessions(currentTeacher.id, workingCells).size;
-            const maxSessions = getTeacherMaxSessionsPerWeek(currentTeacher);
-            const isExceeded = activeSessions > maxSessions;
-
-            return (
-              <div className="flex items-center gap-2 text-xs border-l border-slate-200 pl-3">
-                <span className="text-slate-500 font-medium">Thống kê GV:</span>
-                <span className="font-bold text-slate-800">
-                  {assignedPeriods}/{standardQuota} tiết
-                  {diffPeriods > 0 && (
-                    <span className="ml-1 text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px]">
-                      Dư {diffPeriods} tiết
-                    </span>
-                  )}
+          {/* Stats Badge */}
+          <div className="flex items-center gap-1.5 text-xs bg-slate-800/90 border border-slate-700 px-2.5 py-1 rounded-lg">
+            {viewMode === 'teacher' ? (
+              <>
+                <span className="text-slate-300 font-medium">Tiết:</span>
+                <span className="font-bold text-blue-400">
+                  {currentEntityPlacedPeriods}/{currentTeacher?.maxWeeklyPeriods || 23}
                 </span>
-                <span
-                  className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                    isExceeded
-                      ? 'bg-red-100 text-red-800 border border-red-300'
-                      : activeSessions === maxSessions
-                      ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                      : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                  }`}
-                >
-                  {activeSessions}/{maxSessions} buổi
+                <span className="text-slate-600">•</span>
+                <span className="text-slate-300 font-medium">Buổi:</span>
+                <span className={`font-bold ${teacherSessions > teacherMaxSessions ? 'text-red-400' : 'text-emerald-400'}`}>
+                  {teacherSessions}/{teacherMaxSessions}
                 </span>
-              </div>
-            );
-          })()}
+              </>
+            ) : (
+              <>
+                <span className="text-slate-300 font-medium">Đã xếp:</span>
+                <span className="font-bold text-emerald-400">
+                  {currentEntityPlacedPeriods}/{currentEntityRequiredPeriods} tiết
+                </span>
+              </>
+            )}
+          </div>
 
-          {/* Save Status Badge */}
+          {/* Unsaved Status Indicator */}
           {hasUnsavedChanges ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-[11px] font-bold animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
               <span>Có thay đổi chưa lưu</span>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 text-[11px] font-bold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-              <span>Đã lưu</span>
+            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>Đã lưu {lastSavedAt ? `(${lastSavedAt})` : ''}</span>
             </div>
           )}
         </div>
 
-        {/* Right: Action Controls (Undo, Redo, Reshuffle, Auto, Save) */}
-        <div className="flex items-center gap-2">
+        {/* Right Section: Actions Toolbar */}
+        <div className="flex items-center gap-1.5">
           <button
             onClick={handleUndo}
-            disabled={historyIndex <= 0}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 rounded-xl text-xs font-semibold transition-all active:scale-95"
-            title="Hoàn tác thao tác trước [↶]"
+            disabled={historyIndex === 0}
+            className="p-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+            title="Hoàn tác (Undo)"
           >
-            <Undo2 className="w-3.5 h-3.5 text-slate-600" />
-            <span>Hoàn tác</span>
+            <Undo2 className="w-3.5 h-3.5" />
+            <span className="hidden lg:inline">Hoàn tác</span>
           </button>
 
           <button
             onClick={handleRedo}
-            disabled={historyIndex >= history.length - 1}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 rounded-xl text-xs font-semibold transition-all active:scale-95"
-            title="Làm lại thao tác vừa hoàn tác [↷]"
+            disabled={historyIndex === history.length - 1}
+            className="p-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+            title="Làm lại (Redo)"
           >
-            <Redo2 className="w-3.5 h-3.5 text-slate-600" />
-            <span>Làm lại</span>
+            <Redo2 className="w-3.5 h-3.5" />
+            <span className="hidden lg:inline">Làm lại</span>
           </button>
 
           <button
             onClick={() => setIsReshuffleModalOpen(true)}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all active:scale-95"
-            title="Mở lại các tiết chưa khóa để xếp lại [🔄]"
+            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 border border-slate-700"
+            title="Giải phóng các tiết chưa khóa để xếp lại"
           >
-            <RotateCw className="w-3.5 h-3.5 text-slate-600" />
+            <RotateCw className="w-3.5 h-3.5" />
             <span>Xếp lại</span>
           </button>
 
           <button
             onClick={handleRunAutoSchedule}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95"
-            title="Tự động xếp TKB tối ưu theo các ưu tiên & giới hạn buổi dạy"
+            className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5 active:scale-95 border border-indigo-400/30"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>Tự động xếp</span>
+            <span>✨ Tự động xếp</span>
           </button>
 
           <button
-            onClick={handleSaveButtonClick}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl font-bold text-xs shadow-sm transition-all active:scale-95 ${
-              hasUnsavedChanges
-                ? 'bg-emerald-600 hover:bg-emerald-500 text-white ring-2 ring-emerald-400/50 shadow-emerald-600/20'
-                : 'bg-emerald-700 hover:bg-emerald-600 text-white'
-            }`}
+            onClick={handleInitiateSave}
+            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5"
           >
             <Save className="w-3.5 h-3.5" />
-            <span>LƯU TKB</span>
+            <span>💾 LƯU TKB</span>
           </button>
         </div>
       </div>
 
-      {/* Main Grid + Unassigned Drawer Workspace Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0 overflow-hidden">
-        {/* Left Column: Unassigned Assignments Tray (Width ~250px) */}
-        <div className="lg:col-span-3 xl:col-span-3 2xl:col-span-2.5 bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs flex flex-col min-h-0 h-full">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2 shrink-0">
+      {/* 2. MAIN WORKSPACE CONTAINER (2 COLUMNS: UNASSIGNED TRAY & TIMETABLE GRID) */}
+      <div className="flex-1 flex gap-2.5 p-2.5 overflow-hidden min-h-0">
+        {/* LEFT COLUMN: KHAY TIẾT CHƯA XẾP (~25% WIDTH) */}
+        <div className="w-72 md:w-80 shrink-0 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col overflow-hidden">
+          {/* Tray Header */}
+          <div className="p-2.5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between">
             <div>
-              <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1">
-                <span>Khay Tiết Chưa Xếp</span>
-              </h3>
-              <p className="text-[10px] text-slate-500">Kéo thả môn học vào ô TKB</p>
+              <h2 className="text-xs font-extrabold text-slate-900 tracking-wider uppercase flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                TIẾT CHƯA XẾP
+              </h2>
+              <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
+                Kéo thả môn học vào TKB
+              </p>
             </div>
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${
+              totalUnassignedCount > 0
+                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+            }`}>
+              {totalUnassignedCount > 0 ? `Còn ${totalUnassignedCount} tiết` : '✓ Đủ tiết'}
+            </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0">
+          {/* Tray Items List (Scrollable internally) */}
+          <div className="flex-1 overflow-y-auto p-2 space-y-2">
             {unassignedTrayItems.length === 0 ? (
-              <div className="text-center py-6 text-xs text-slate-400">
+              <div className="p-4 text-center text-xs text-slate-400 italic">
                 Chưa có phân công chuyên môn cho đối tượng này.
               </div>
             ) : (
               unassignedTrayItems.map((item) => {
-                const isSuggesting = suggestingAssignment?.id === item.assignment.id;
                 const isDepleted = item.remainingCount <= 0;
+                const isSuggesting = suggestingAssignment?.id === item.assignment.id;
 
                 return (
                   <div
                     key={item.assignment.id}
                     draggable={!isDepleted}
                     onDragStart={(e) => {
+                      if (isDepleted) return;
                       e.stopPropagation();
                       e.dataTransfer.setData('text/plain', item.assignment.id);
                       e.dataTransfer.effectAllowed = 'move';
@@ -803,61 +594,59 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                       setHoveredSlot(null);
                     }}
                     className={`p-2.5 rounded-xl border transition-all ${
-                      isSuggesting
-                        ? 'bg-blue-50 border-blue-400 shadow-sm ring-2 ring-blue-500/30'
-                        : isDepleted
-                        ? 'bg-slate-50 border-slate-200 opacity-60'
-                        : 'bg-white border-slate-200 hover:border-blue-300 shadow-2xs cursor-grab active:cursor-grabbing'
+                      isDepleted
+                        ? 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed'
+                        : isSuggesting
+                        ? 'bg-blue-50/90 border-blue-300 shadow-xs ring-1 ring-blue-400'
+                        : 'bg-white border-slate-200/90 hover:border-blue-300 hover:shadow-xs cursor-grab active:cursor-grabbing'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-start justify-between gap-1.5">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span
                           className="w-2.5 h-2.5 rounded-full shrink-0"
                           style={{ backgroundColor: item.subject?.color || '#3B82F6' }}
                         />
-                        <span className="font-bold text-slate-900 text-xs truncate">
-                          {item.subject?.name}
+                        <span className="font-bold text-xs text-slate-900 truncate">
+                          {item.subject?.name || 'Môn học'}
                         </span>
                       </div>
 
                       <span
-                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${
                           isDepleted
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-blue-100 text-blue-800'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            : 'bg-amber-50 text-amber-800 border-amber-200'
                         }`}
                       >
+                        {isDepleted ? '✓Đủ' : `Còn ${item.remainingCount}`}
+                      </span>
+                    </div>
+
+                    <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                      <span className="truncate max-w-[130px]">
+                        {viewMode === 'class'
+                          ? item.teacher?.name || 'Chưa gán GV'
+                          : `Lớp ${item.cls?.name || '?'}`}
+                      </span>
+                      <span className="text-slate-400 font-normal">
                         {item.placedCount}/{item.assignment.periodsPerWeek} tiết
                       </span>
                     </div>
 
-                    <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
-                      <span className="truncate">
-                        {viewMode === 'class'
-                          ? `GV: ${item.teacher?.name}`
-                          : `Lớp: ${item.cls?.name}`}
-                      </span>
-                      {item.remainingCount > 0 && (
-                        <span className="font-bold text-blue-600 shrink-0 text-[10px]">
-                          Còn {item.remainingCount}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Suggestion Toggle Button */}
+                    {/* Action Suggestion Button */}
                     {!isDepleted && (
-                      <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center justify-between">
+                      <div className="mt-2 pt-1.5 border-t border-slate-100 flex justify-end">
                         <button
                           onClick={() => handleToggleSuggestion(item.assignment)}
-                          className={`w-full py-1 px-2 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1 transition-all ${
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 transition-colors ${
                             isSuggesting
-                              ? 'bg-blue-600 text-white shadow-2xs'
-                              : 'bg-slate-100 text-slate-700 hover:bg-blue-50 hover:text-blue-700'
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700'
                           }`}
                         >
                           <Sparkles className="w-3 h-3" />
-                          <span>{isSuggesting ? 'Tắt gợi ý' : 'Gợi ý vị trí'}</span>
+                          <span>{isSuggesting ? 'Ẩn gợi ý' : 'Gợi ý vị trí'}</span>
                         </button>
                       </div>
                     )}
@@ -868,51 +657,18 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Redesigned Compact Timetable Grid Matrix */}
-        <div className="lg:col-span-9 xl:col-span-9 2xl:col-span-9.5 bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs flex flex-col min-h-0 h-full">
-          {/* Header Row above table */}
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2 shrink-0">
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold text-slate-900 text-sm">
-                {viewMode === 'class'
-                  ? `BẢNG TKB LỚP ${currentClass?.name}`
-                  : `BẢNG TKB - ${currentTeacher?.name}`}
-              </h3>
-              <span className="text-[11px] text-slate-500">
-                (7 tiết/ngày: 4 Sáng + 3 Chiều)
-              </span>
-            </div>
-
-            {suggestingAssignment && (
-              <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-xl text-xs font-medium text-blue-900">
-                <Sparkles className="w-3.5 h-3.5 text-blue-600 animate-pulse" />
-                <span>
-                  Đang gợi ý:{' '}
-                  <b>{subjects.find((s) => s.id === suggestingAssignment.subjectId)?.name}</b>
-                </span>
-                <button
-                  onClick={() => {
-                    setSuggestingAssignment(null);
-                    setSuggestions([]);
-                  }}
-                  className="p-0.5 hover:bg-blue-200 rounded text-blue-700"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Matrix Table Container - Scrollable internal table if needed */}
-          <div className="flex-1 overflow-auto rounded-xl border border-slate-200 bg-slate-50/20 min-h-0">
-            <table className="w-full text-center border-collapse text-xs table-fixed">
+        {/* RIGHT COLUMN: BẢNG THỜI KHÓA BIỂU (~75% WIDTH) */}
+        <div className="flex-1 min-w-0 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col overflow-hidden h-full">
+          {/* Table Container - Scrollable Internally */}
+          <div className="flex-1 overflow-auto">
+            <table className="w-full border-collapse text-left min-w-[700px]">
               <thead>
-                <tr className="bg-slate-900 text-white font-bold border-b border-slate-800 sticky top-0 z-20 h-10">
-                  <th className="p-2 border-r border-slate-800 w-20 text-[11px] uppercase tracking-wider">
-                    TIẾT
+                <tr className="bg-slate-900 text-white font-bold border-b border-slate-800 sticky top-0 z-20 h-9 text-xs">
+                  <th className="p-1.5 border-r border-slate-800 w-24 text-center uppercase tracking-wider text-[11px]">
+                    TIẾT / BUỔI
                   </th>
                   {days.map((day) => (
-                    <th key={day} className="p-2 border-r border-slate-800 font-bold text-xs">
+                    <th key={day} className="p-1.5 border-r border-slate-800 text-center font-bold text-xs">
                       THỨ {day.replace('T', '')}
                     </th>
                   ))}
@@ -920,25 +676,39 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
               </thead>
               <tbody>
                 {periodRows.map((row, rIdx) => {
-                  const isAfternoonFirstRow = rIdx === 4; // Right before T5
+                  const isMorningHeader = rIdx === 0;
+                  const isAfternoonHeader = rIdx === 4;
 
                   return (
                     <React.Fragment key={row.id}>
-                      {/* Slim Afternoon Divider Bar (Height ~26px) */}
-                      {isAfternoonFirstRow && (
-                        <tr className="bg-gradient-to-r from-amber-50 via-amber-100/70 to-amber-50 text-amber-900 font-bold border-y border-amber-200 text-center h-7">
-                          <td className="font-mono text-[10px] tracking-wider uppercase bg-amber-200/60 text-amber-950 border-r border-amber-300">
-                            CHIỀU
+                      {/* Morning Header Divider */}
+                      {isMorningHeader && (
+                        <tr className="bg-blue-50/80 text-blue-900 font-bold border-y border-blue-200 text-center h-6">
+                          <td className="font-bold text-[10px] uppercase bg-blue-100/90 text-blue-950 border-r border-blue-200 px-1">
+                            SÁNG
                           </td>
-                          <td colSpan={days.length} className="text-[11px] tracking-widest uppercase font-semibold py-1">
-                            🌤 BUỔI CHIỀU (TIẾT 5 – TIẾT 7)
+                          <td colSpan={days.length} className="text-[11px] uppercase tracking-wider font-extrabold py-0.5">
+                            ☀️ BUỔI SÁNG (TIẾT 1 – TIẾT 4)
                           </td>
                         </tr>
                       )}
 
-                      <tr className="border-b border-slate-200 hover:bg-slate-50/50 h-[56px]">
+                      {/* Afternoon Header Divider */}
+                      {isAfternoonHeader && (
+                        <tr className="bg-amber-50/80 text-amber-900 font-bold border-y border-amber-200 text-center h-6">
+                          <td className="font-bold text-[10px] uppercase bg-amber-100/90 text-amber-950 border-r border-amber-200 px-1">
+                            CHIỀU
+                          </td>
+                          <td colSpan={days.length} className="text-[11px] uppercase tracking-wider font-extrabold py-0.5">
+                            🌤 BUỔI CHIỀU (TIẾT 1 – TIẾT 3)
+                          </td>
+                        </tr>
+                      )}
+
+                      {/* Row Grid */}
+                      <tr className="border-b border-slate-200 hover:bg-slate-50/40 h-[44px]">
                         {/* Period Column Label */}
-                        <td className="p-1 font-bold text-slate-800 border-r border-slate-200 bg-slate-100/80 text-center">
+                        <td className="p-1 font-bold text-slate-800 border-r border-slate-200 bg-slate-50 text-center w-24 shrink-0">
                           <div className="text-xs font-black text-slate-900">{row.label}</div>
                           <div className="text-[9px] text-slate-500 font-normal">
                             {row.isMorning ? 'Sáng' : 'Chiều'}
@@ -950,11 +720,11 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                           const shift: PeriodShift = row.shift;
                           const pNum = row.periodNumber;
 
-                          // Find cell in slot
+                          // Cell lookup - STRICT 1-1-1 MATCH
                           const cellInSlot = workingCells.find((c) => {
                             if (c.day !== day) return false;
-                            if (!isSameSlot(c.shift, c.periodNumber, shift, pNum)) return false;
-
+                            if (c.shift !== shift) return false;
+                            if (c.periodNumber !== pNum) return false;
                             return viewMode === 'class'
                               ? c.classId === selectedClassId
                               : c.teacherId === selectedTeacherId;
@@ -974,14 +744,16 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                           const suggestion = suggestions.find(
                             (s) =>
                               s.day === day &&
-                              isSameSlot(s.shift, s.periodNumber, shift, pNum)
+                              s.shift === shift &&
+                              s.periodNumber === pNum
                           );
 
-                          // Check disabled slot
+                          // Check disabled school slot
                           const isDisabledSchool = timeConfig.disabledSlots.some(
                             (d) =>
                               d.day === day &&
-                              isSameSlot(d.shift, d.periodNumber, shift, pNum)
+                              d.shift === shift &&
+                              d.periodNumber === pNum
                           );
 
                           const isHovered =
@@ -1018,21 +790,13 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                                   );
                                 }
                               }}
-                              className={`p-1 border-r border-slate-200 align-middle transition-all h-[56px] ${
-                                isDisabledSchool
-                                  ? 'bg-slate-100 text-slate-400'
-                                  : isHovered
-                                  ? 'bg-blue-100/90 ring-2 ring-blue-500'
-                                  : suggestion
-                                  ? suggestion.isValid
-                                    ? 'bg-emerald-50 ring-2 ring-emerald-400'
-                                    : 'bg-red-50/60'
-                                  : ''
-                              }`}
+                              className={`p-1 border-r border-slate-200 transition-colors relative h-[44px] ${
+                                isHovered ? 'bg-blue-100/70 ring-2 ring-blue-500 z-10' : ''
+                              } ${isDisabledSchool ? 'bg-slate-100/90' : ''}`}
                             >
                               {isDisabledSchool ? (
-                                <div className="text-[10px] text-slate-400 font-semibold uppercase text-center">
-                                  Trường tắt
+                                <div className="h-full flex items-center justify-center text-[10px] text-slate-400 font-semibold italic bg-slate-100 border border-dashed border-slate-200 rounded-lg">
+                                  🚫 Nghỉ
                                 </div>
                               ) : cellInSlot ? (
                                 <div
@@ -1052,51 +816,40 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                                     setDraggedItem(null);
                                     setHoveredSlot(null);
                                   }}
-                                  title={`Môn: ${subject?.name || ''}\nLớp: ${cls?.name || ''}\nGiáo viên: ${teacher?.name || ''}\nBuổi: ${shift === 'morning' ? 'Sáng' : 'Chiều'} - Tiết ${row.label}\nTrạng thái: ${cellInSlot.isLocked ? '🔒 Đã khóa' : '🟢 Hợp lệ'}`}
-                                  className={`h-[48px] px-2 py-1 rounded-lg border text-left shadow-2xs relative group transition-all flex flex-col justify-between ${
+                                  className={`h-full p-1 rounded-lg border text-left flex items-center justify-between transition-all group ${
                                     cellInSlot.isLocked
-                                      ? 'bg-amber-50/90 border-amber-300'
-                                      : 'bg-white border-slate-300 hover:border-blue-400 hover:shadow cursor-grab active:cursor-grabbing'
+                                      ? 'bg-slate-100 border-slate-300 text-slate-800'
+                                      : 'bg-white border-slate-200 hover:border-blue-400 hover:shadow-xs cursor-grab active:cursor-grabbing'
                                   }`}
                                   style={{
-                                    borderLeftWidth: '4px',
-                                    borderLeftColor: subject?.color || '#2563EB',
+                                    borderLeftWidth: '3px',
+                                    borderLeftColor: subject?.color || '#3B82F6',
                                   }}
                                 >
-                                  {/* Line 1: Subject Name */}
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span className="font-bold text-slate-900 text-[12px] leading-tight truncate">
-                                      {subject?.name}
-                                    </span>
-                                    {cellInSlot.isLocked && (
-                                      <span className="text-amber-700 shrink-0" title="Ô này đã bị khóa">
-                                        <Lock className="w-3 h-3" />
-                                      </span>
-                                    )}
+                                  <div className="min-w-0 flex-1 pr-1">
+                                    <div className="font-bold text-xs text-slate-900 truncate leading-tight">
+                                      {subject?.name || 'Môn học'}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 font-medium truncate">
+                                      {viewMode === 'class'
+                                        ? teacher?.name || 'Chưa gán GV'
+                                        : `Lớp ${cls?.name || '?'}`}
+                                    </div>
                                   </div>
 
-                                  {/* Line 2: Class or Teacher Name */}
-                                  <div className="text-[11px] text-slate-600 font-medium leading-tight truncate">
-                                    {viewMode === 'class' ? teacher?.name : `Lớp ${cls?.name}`}
-                                  </div>
-
-                                  {/* Hover Cell Action buttons */}
-                                  <div className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-white/95 rounded p-0.5 shadow border border-slate-200 z-10">
+                                  <div className="flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
                                     <button
                                       onClick={() => handleToggleLockCell(cellInSlot.id)}
-                                      className={`p-0.5 rounded hover:bg-slate-100 ${
-                                        cellInSlot.isLocked
-                                          ? 'text-amber-700 font-bold'
-                                          : 'text-slate-500'
-                                      }`}
-                                      title={cellInSlot.isLocked ? 'Mở khóa ô này' : 'Khóa ô này'}
+                                      className="p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                                      title={cellInSlot.isLocked ? 'Mở khóa tiết' : 'Khóa tiết'}
                                     >
                                       {cellInSlot.isLocked ? (
-                                        <Unlock className="w-3 h-3" />
+                                        <Lock className="w-3 h-3 text-slate-700" />
                                       ) : (
-                                        <Lock className="w-3 h-3" />
+                                        <Unlock className="w-3 h-3 text-slate-400" />
                                       )}
                                     </button>
+
                                     {!cellInSlot.isLocked && (
                                       <button
                                         onClick={() => handleDeleteCell(cellInSlot.id)}
@@ -1121,9 +874,9 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                                     }
                                   }}
                                   disabled={!suggestion.isValid}
-                                  className={`w-full h-[48px] p-1 rounded-lg text-left border flex flex-col justify-between transition-all ${
+                                  className={`w-full h-full p-1 rounded-lg text-left border flex flex-col justify-between transition-all ${
                                     suggestion.isValid
-                                      ? 'bg-emerald-100/70 border-emerald-300 text-emerald-900 hover:bg-emerald-200 cursor-pointer shadow-2xs'
+                                      ? 'bg-emerald-100/80 border-emerald-300 text-emerald-900 hover:bg-emerald-200 cursor-pointer shadow-2xs'
                                       : 'bg-red-50/80 border-red-200 text-red-800 cursor-not-allowed opacity-80'
                                   }`}
                                 >
@@ -1141,7 +894,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                                   )}
                                 </button>
                               ) : (
-                                <div className="h-[48px] flex items-center justify-center text-[10px] text-slate-300 hover:text-slate-500 border border-dashed border-slate-200 rounded-lg hover:bg-slate-50/80 transition-colors cursor-pointer">
+                                <div className="h-full flex items-center justify-center text-[10px] text-slate-300 hover:text-slate-500 border border-dashed border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer font-medium">
                                   + Trống
                                 </div>
                               )}
@@ -1397,7 +1150,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
 
       {/* Success Toast Notification */}
       {successToast && (
-        <div className="fixed bottom-6 right-6 bg-emerald-800 text-white px-5 py-3.5 rounded-xl shadow-2xl flex items-center gap-3 text-xs font-bold z-50 animate-in slide-in-from-bottom-5 duration-200 border border-emerald-700">
+        <div className="fixed bottom-6 right-6 bg-emerald-800 text-white px-5 py-3.5 rounded-xl shadow-2xl flex items-center gap-3 text-xs font-bold z-50 border border-emerald-700">
           <CheckCircle2 className="w-5 h-5 text-emerald-300" />
           <span>{successToast}</span>
         </div>
@@ -1405,7 +1158,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
 
       {/* Info Toast Notification */}
       {infoToast && (
-        <div className="fixed bottom-6 right-6 bg-slate-800 text-white px-5 py-3.5 rounded-xl shadow-2xl flex items-center gap-3 text-xs font-bold z-50 animate-in slide-in-from-bottom-5 duration-200 border border-slate-700">
+        <div className="fixed bottom-6 right-6 bg-slate-800 text-white px-5 py-3.5 rounded-xl shadow-2xl flex items-center gap-3 text-xs font-bold z-50 border border-slate-700">
           <Info className="w-5 h-5 text-blue-400" />
           <span>{infoToast}</span>
         </div>
