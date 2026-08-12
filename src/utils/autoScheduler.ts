@@ -17,6 +17,22 @@ import {
 } from './teacherUtils';
 import { validateConsecutiveSubjectLimit } from './conflictChecker';
 
+/**
+ * Priority slots to keep empty during Auto Schedule (T2 Morning P1 - Chào cờ & T6 Morning P4 - Sinh hoạt lớp).
+ * NOTE: This function is ONLY used inside runAutoScheduler.
+ * It MUST NOT be called in manual drag & drop or general timetable validation.
+ */
+export function isAutoScheduleExcludedSlot(
+  day: DayOfWeek,
+  shift: PeriodShift,
+  periodNumber: number
+): boolean {
+  return (
+    (day === 'T2' && shift === 'morning' && periodNumber === 1) ||
+    (day === 'T6' && shift === 'morning' && periodNumber === 4)
+  );
+}
+
 export interface UnplacedAssignmentReport {
   assignment: Assignment;
   className: string;
@@ -125,6 +141,11 @@ export function runAutoScheduler(
               : timeConfig.afternoonPeriodsCount;
 
           for (let p = 1; p <= maxP; p++) {
+            // Check 0: Auto Schedule excluded slots (T2 Morning P1 & T6 Morning P4 reserved to stay empty)
+            if (isAutoScheduleExcludedSlot(day, shift, p)) {
+              continue;
+            }
+
             // Check 1: Disabled school slot
             const isDisabledSchool = timeConfig.disabledSlots.some(
               (d) => d.day === day && d.shift === shift && d.periodNumber === p
@@ -294,7 +315,7 @@ export function runAutoScheduler(
     if (remainingToPlace > 0) {
       const currentTeacherSessions = getTeacherSessions(assignment.teacherId, workingCells);
       const maxSessions = tch ? getTeacherMaxSessionsPerWeek(tch) : 7;
-      let reason = 'Không tìm được vị trí trống phù hợp do trùng lịch lớp/giáo viên.';
+      let reason = 'Không tìm thấy vị trí trống phù hợp (các vị trí ưu tiên Thứ 2 Sáng Tiết 1 / Thứ 6 Sáng Tiết 4 được giữ trống theo quy tắc).';
       if (currentTeacherSessions.size >= maxSessions) {
         reason = `Giáo viên ${teacherName} đã đạt giới hạn ${maxSessions} buổi/tuần do Ban Giám hiệu thiết lập, không thể mở thêm buổi mới.`;
       }
