@@ -87,7 +87,10 @@ export type ConflictType =
   | 'teacher_unavailable'
   | 'teacher_max_periods'
   | 'consecutive_periods'
-  | 'subject_clustering';
+  | 'subject_clustering'
+  | 'teacher_min_periods_per_shift'
+  | 'teacher_gap_in_shift'
+  | 'subject_shift_limit';
 
 export interface ConflictIssue {
   id: string;

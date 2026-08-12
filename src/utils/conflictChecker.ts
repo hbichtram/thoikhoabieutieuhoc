@@ -27,6 +27,110 @@ export interface ConsecutiveValidationResult {
   shift?: PeriodShift;
 }
 
+export interface GvbmValidationResult {
+  valid: boolean;
+  reason?: string;
+  teacherId?: string;
+  day?: DayOfWeek;
+  shift?: PeriodShift;
+  errorType?: 'TEACHER_MIN_PERIODS_PER_SHIFT' | 'TEACHER_GAP_IN_SHIFT';
+  violatingCellIds?: string[];
+}
+
+/**
+ * Validates GVBM (Subject Teacher) constraints:
+ * 1. Minimum 2 periods per shift if teacher teaches in that shift.
+ * 2. No gaps between teaching periods in the same shift.
+ */
+export function validateGvbmConstraints(
+  proposedCells: ScheduleCell[],
+  teachers?: Teacher[],
+  targetTeacherId?: string,
+  targetDay?: DayOfWeek,
+  targetShift?: PeriodShift
+): GvbmValidationResult {
+  const teacherMap = teachers ? new Map(teachers.map((t) => [t.id, t])) : new Map();
+
+  const groups = new Map<string, ScheduleCell[]>();
+
+  proposedCells.forEach((c) => {
+    if (!c.teacherId) return;
+    if (targetTeacherId && c.teacherId !== targetTeacherId) return;
+    if (targetDay && c.day !== targetDay) return;
+    if (targetShift && c.shift !== targetShift) return;
+
+    const tch = teacherMap.get(c.teacherId);
+    // If teacher is known and is homeroom teacher (GVCN), skip GVBM rules
+    if (tch && tch.type === 'homeroom') return;
+
+    const key = `${c.teacherId}_${c.day}_${c.shift}`;
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)!.push(c);
+  });
+
+  const dayNames: Record<DayOfWeek, string> = {
+    T2: 'Thứ 2',
+    T3: 'Thứ 3',
+    T4: 'Thứ 4',
+    T5: 'Thứ 5',
+    T6: 'Thứ 6',
+  };
+
+  for (const [key, cellGroup] of groups.entries()) {
+    const [teacherId, day, shift] = key.split('_') as [string, DayOfWeek, PeriodShift];
+    const tch = teacherMap.get(teacherId);
+    const teacherName = tch ? tch.name : 'Giáo viên';
+    const dayLabel = dayNames[day] || day;
+    const shiftLabel = shift === 'morning' ? 'Sáng' : 'Chiều';
+
+    // Get normalized period numbers (1..4 morning, 1..3 afternoon)
+    const periodSet = new Set<number>();
+    cellGroup.forEach((c) => {
+      const pNum = c.periodNumber > 4 ? c.periodNumber - 4 : c.periodNumber;
+      periodSet.add(pNum);
+    });
+
+    const periods = Array.from(periodSet).sort((a, b) => a - b);
+    const count = periods.length;
+
+    // Rule A: Minimum 2 periods per shift for GVBM
+    if (count === 1) {
+      return {
+        valid: false,
+        reason: `GVBM "${teacherName}" - ${dayLabel} - Buổi ${shiftLabel}: Chỉ có 1 tiết dạy trong buổi. GVBM phải có tối thiểu 2 tiết/buổi.`,
+        teacherId,
+        day,
+        shift,
+        errorType: 'TEACHER_MIN_PERIODS_PER_SHIFT',
+        violatingCellIds: cellGroup.map((c) => c.id),
+      };
+    }
+
+    // Rule B: No gaps in shift for GVBM
+    if (count >= 2) {
+      const minP = periods[0];
+      const maxP = periods[periods.length - 1];
+      for (let p = minP; p <= maxP; p++) {
+        if (!periodSet.has(p)) {
+          return {
+            valid: false,
+            reason: `GVBM "${teacherName}" - ${dayLabel} - Buổi ${shiftLabel}: Các tiết dạy bị gián đoạn, không được có tiết trống giữa.`,
+            teacherId,
+            day,
+            shift,
+            errorType: 'TEACHER_GAP_IN_SHIFT',
+            violatingCellIds: cellGroup.map((c) => c.id),
+          };
+        }
+      }
+    }
+  }
+
+  return { valid: true };
+}
+
 /**
  * Validates that no subject has more than 2 CONSECUTIVE periods in the same shift and same day for any class.
  */
@@ -464,6 +568,75 @@ export function checkFullSchedule(
     });
   }
 
+  // Check J: Critical GVBM Constraints (Min 2 periods per shift, No gaps in shift)
+  teachers.forEach((tch) => {
+    // Only check GVBM (subject teachers)
+    if (tch.type === 'homeroom') return;
+
+    const days: DayOfWeek[] = timeConfig.enabledDays;
+    const shifts: PeriodShift[] = ['morning', 'afternoon'];
+    const dayNames: Record<DayOfWeek, string> = {
+      T2: 'Thứ 2',
+      T3: 'Thứ 3',
+      T4: 'Thứ 4',
+      T5: 'Thứ 5',
+      T6: 'Thứ 6',
+    };
+
+    days.forEach((day) => {
+      shifts.forEach((shift) => {
+        const teacherShiftCells = cells.filter(
+          (c) => c.teacherId === tch.id && c.day === day && c.shift === shift
+        );
+
+        if (teacherShiftCells.length === 0) return;
+
+        const dayLabel = dayNames[day] || day;
+        const shiftLabel = shift === 'morning' ? 'Sáng' : 'Chiều';
+
+        // Check J1: Minimum 2 periods per shift
+        if (teacherShiftCells.length === 1) {
+          issues.push({
+            id: `gvbm_min_${tch.id}_${day}_${shift}`,
+            type: 'teacher_min_periods_per_shift',
+            severity: 'critical',
+            message: `🔴 GVBM ${tch.name} - ${dayLabel} - Buổi ${shiftLabel}: Chỉ có 1 tiết dạy trong buổi. GVBM phải có tối thiểu 2 tiết/buổi.`,
+            teacherId: tch.id,
+            day,
+            shift,
+          });
+        }
+
+        // Check J2: No gaps between periods in the shift
+        if (teacherShiftCells.length >= 2) {
+          const pNums = Array.from(
+            new Set(
+              teacherShiftCells.map((c) => (c.periodNumber > 4 ? c.periodNumber - 4 : c.periodNumber))
+            )
+          ).sort((a, b) => a - b);
+
+          const minP = pNums[0];
+          const maxP = pNums[pNums.length - 1];
+
+          for (let p = minP; p <= maxP; p++) {
+            if (!pNums.includes(p)) {
+              issues.push({
+                id: `gvbm_gap_${tch.id}_${day}_${shift}`,
+                type: 'teacher_gap_in_shift',
+                severity: 'critical',
+                message: `🔴 GVBM ${tch.name} - ${dayLabel} - Buổi ${shiftLabel}: Các tiết dạy bị gián đoạn, không được có tiết trống giữa.`,
+                teacherId: tch.id,
+                day,
+                shift,
+              });
+              break;
+            }
+          }
+        }
+      });
+    });
+  });
+
   const criticalErrorCount = issues.filter((i) => i.severity === 'critical').length;
   const warningCount = issues.filter((i) => i.severity === 'warning').length;
 
@@ -602,6 +775,25 @@ export function getSlotSuggestions(
             periodNumber: p,
             isValid: false,
             reason: `Môn ${sub?.name || ''} chỉ được xếp liên tiếp tối đa 2 tiết trong một buổi`,
+          });
+          continue;
+        }
+
+        // Check Hard Constraint: GVBM (Subject Teacher) constraints (min 2 periods per shift, no gaps)
+        const gvbmVal = validateGvbmConstraints(
+          [...cells, testCell],
+          teachers,
+          assignment.teacherId,
+          day,
+          shift
+        );
+        if (!gvbmVal.valid) {
+          suggestions.push({
+            day,
+            shift,
+            periodNumber: p,
+            isValid: false,
+            reason: gvbmVal.reason,
           });
           continue;
         }

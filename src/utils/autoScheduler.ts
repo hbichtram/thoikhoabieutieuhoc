@@ -15,7 +15,7 @@ import {
   getTeacherGapPeriods,
   getTeacherMaxSessionsPerWeek,
 } from './teacherUtils';
-import { validateConsecutiveSubjectLimit } from './conflictChecker';
+import { validateConsecutiveSubjectLimit, validateGvbmConstraints } from './conflictChecker';
 
 /**
  * Priority slots to keep empty during Auto Schedule (T2 Morning P1 - Chào cờ & T6 Morning P4 - Sinh hoạt lớp).
@@ -214,6 +214,29 @@ export function runAutoScheduler(
             if (!consecVal.valid) {
               // Creating >2 consecutive periods of same subject is STRICTLY FORBIDDEN!
               continue;
+            }
+
+            // Check 7: GVBM No Gaps Constraint (HARD CONSTRAINT)
+            if (tch && tch.type !== 'homeroom') {
+              const teacherSessionPNums = workingCells
+                .filter(
+                  (c) =>
+                    c.teacherId === assignment.teacherId &&
+                    c.day === day &&
+                    c.shift === shift
+                )
+                .map((c) => (c.periodNumber > 4 ? c.periodNumber - 4 : c.periodNumber));
+
+              if (teacherSessionPNums.length > 0) {
+                const normP = p > 4 ? p - 4 : p;
+                const combinedP = Array.from(new Set([...teacherSessionPNums, normP])).sort((a, b) => a - b);
+                const minP = combinedP[0];
+                const maxP = combinedP[combinedP.length - 1];
+                if (combinedP.length < (maxP - minP + 1)) {
+                  // Creates a gap for GVBM -> DISQUALIFIED!
+                  continue;
+                }
+              }
             }
 
             // --- SCORING SYSTEM (According to section 16) ---

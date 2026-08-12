@@ -28,7 +28,7 @@ import {
   PeriodShift,
   SuggestionSlot,
 } from '../../types';
-import { getSlotSuggestions, checkFullSchedule, validateConsecutiveSubjectLimit } from '../../utils/conflictChecker';
+import { getSlotSuggestions, checkFullSchedule, validateConsecutiveSubjectLimit, validateGvbmConstraints } from '../../utils/conflictChecker';
 import { getStoredLastSavedAt, setStoredLastSavedAt } from '../../services/storage';
 import { runAutoScheduler, AutoScheduleResult } from '../../utils/autoScheduler';
 import {
@@ -323,6 +323,16 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
         return;
       }
 
+      const gvbmVal = validateGvbmConstraints(
+        proposedCells,
+        teachers,
+        assignment.teacherId
+      );
+      if (!gvbmVal.valid) {
+        alert(`Không thể xếp tiết này.\n${gvbmVal.reason}`);
+        return;
+      }
+
       updateGridCells(proposedCells);
     } else {
       // Rule 2: Moving an existing placed cell to a new target slot -> STRICTLY 1 PERIOD MOVE
@@ -351,6 +361,16 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
         alert(
           `Không thể xếp tiết này.\nMôn ${subName} chỉ được xếp liên tiếp tối đa 2 tiết trong cùng một buổi.`
         );
+        return;
+      }
+
+      const gvbmVal = validateGvbmConstraints(
+        proposedCells,
+        teachers,
+        assignment.teacherId
+      );
+      if (!gvbmVal.valid) {
+        alert(`Không thể chuyển tiết này.\n${gvbmVal.reason}`);
         return;
       }
 
