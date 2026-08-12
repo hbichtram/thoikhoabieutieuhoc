@@ -15,7 +15,7 @@ import {
   getTeacherGapPeriods,
   getTeacherMaxSessionsPerWeek,
 } from './teacherUtils';
-import { validateConsecutiveSubjectLimit, validateGvbmConstraints } from './conflictChecker';
+import { validateConsecutiveSubjectLimit, validateSubjectShiftLimit, validateGvbmConstraints } from './conflictChecker';
 
 /**
  * Priority slots to keep empty during Auto Schedule (T2 Morning P1 - Chào cờ & T6 Morning P4 - Sinh hoạt lớp).
@@ -68,10 +68,8 @@ export function runAutoScheduler(
   currentCells: ScheduleCell[],
   onlyUnlocked: boolean = true
 ): AutoScheduleResult {
-  // Preserve locked cells (or all cells if not reshuffling)
-  const baseCells: ScheduleCell[] = onlyUnlocked
-    ? currentCells.filter((c) => c.isLocked)
-    : [...currentCells];
+  // Preserve all existing cells as baseline (user placed or locked cells must not be overwritten or removed)
+  const baseCells: ScheduleCell[] = [...currentCells];
 
   const teacherMap = new Map(teachers.map((t) => [t.id, t]));
   const classMap = new Map(classes.map((c) => [c.id, c]));
@@ -216,27 +214,30 @@ export function runAutoScheduler(
               continue;
             }
 
-            // Check 7: GVBM No Gaps Constraint (HARD CONSTRAINT)
-            if (tch && tch.type !== 'homeroom') {
-              const teacherSessionPNums = workingCells
-                .filter(
-                  (c) =>
-                    c.teacherId === assignment.teacherId &&
-                    c.day === day &&
-                    c.shift === shift
-                )
-                .map((c) => (c.periodNumber > 4 ? c.periodNumber - 4 : c.periodNumber));
+            // Check 7: Max 2 TOTAL periods for same subject in same shift & day (HARD CONSTRAINT)
+            const shiftLimitVal = validateSubjectShiftLimit(
+              [...workingCells, candidateTestCell],
+              subjects,
+              assignment.classId,
+              day,
+              shift
+            );
+            if (!shiftLimitVal.valid) {
+              // Creating >2 total periods of same subject in shift is STRICTLY FORBIDDEN!
+              continue;
+            }
 
-              if (teacherSessionPNums.length > 0) {
-                const normP = p > 4 ? p - 4 : p;
-                const combinedP = Array.from(new Set([...teacherSessionPNums, normP])).sort((a, b) => a - b);
-                const minP = combinedP[0];
-                const maxP = combinedP[combinedP.length - 1];
-                if (combinedP.length < (maxP - minP + 1)) {
-                  // Creates a gap for GVBM -> DISQUALIFIED!
-                  continue;
-                }
-              }
+            // Check 8: GVBM no gaps constraint (HARD CONSTRAINT)
+            const gvbmVal = validateGvbmConstraints(
+              [...workingCells, candidateTestCell],
+              teachers,
+              assignment.teacherId,
+              day,
+              shift
+            );
+            if (!gvbmVal.valid && gvbmVal.errorType === 'TEACHER_GAP_IN_SHIFT') {
+              // Creating a gap for a GVBM in a shift is STRICTLY FORBIDDEN!
+              continue;
             }
 
             // --- SCORING SYSTEM (According to section 16) ---

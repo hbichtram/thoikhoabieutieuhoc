@@ -88,9 +88,10 @@ export type ConflictType =
   | 'teacher_max_periods'
   | 'consecutive_periods'
   | 'subject_clustering'
+  | 'subject_shift_limit'
   | 'teacher_min_periods_per_shift'
   | 'teacher_gap_in_shift'
-  | 'subject_shift_limit';
+  | 'auto_blocked_slot_used';
 
 export interface ConflictIssue {
   id: string;

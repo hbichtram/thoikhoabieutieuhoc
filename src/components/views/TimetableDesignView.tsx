@@ -28,7 +28,7 @@ import {
   PeriodShift,
   SuggestionSlot,
 } from '../../types';
-import { getSlotSuggestions, checkFullSchedule, validateConsecutiveSubjectLimit, validateGvbmConstraints } from '../../utils/conflictChecker';
+import { getSlotSuggestions, checkFullSchedule, validateConsecutiveSubjectLimit, validateSubjectShiftLimit, validateGvbmConstraints } from '../../utils/conflictChecker';
 import { getStoredLastSavedAt, setStoredLastSavedAt } from '../../services/storage';
 import { runAutoScheduler, AutoScheduleResult } from '../../utils/autoScheduler';
 import {
@@ -88,6 +88,8 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
   const [isErrorModalOpen, setIsErrorModalOpen] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isReshuffleModalOpen, setIsReshuffleModalOpen] = useState(false);
+  const [isAutoScheduling, setIsAutoScheduling] = useState(false);
+  const [autoScheduleStepText, setAutoScheduleStepText] = useState('');
   const [autoScheduleResult, setAutoScheduleResult] = useState<AutoScheduleResult | null>(null);
 
   const [successToast, setSuccessToast] = useState<string | null>(null);
@@ -188,17 +190,54 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
 
   // Auto Schedule Handler
   const handleRunAutoSchedule = () => {
-    const result = runAutoScheduler(
+    setIsAutoScheduling(true);
+    setAutoScheduleStepText('Đang phân tích ràng buộc...');
+
+    setTimeout(() => {
+      setAutoScheduleStepText('Đang tối ưu thời khóa biểu...');
+
+      setTimeout(() => {
+        const result = runAutoScheduler(
+          teachers,
+          classes,
+          subjects,
+          assignments,
+          timeConfig,
+          workingCells,
+          true
+        );
+        updateGridCells(result.newCells);
+        setAutoScheduleResult(result);
+        setIsAutoScheduling(false);
+      }, 300);
+    }, 300);
+  };
+
+  // Check Full TKB Rules Handler
+  const handleCheckTkb = () => {
+    const stats = checkFullSchedule(
       teachers,
       classes,
       subjects,
       assignments,
       timeConfig,
-      workingCells,
-      true
+      workingCells
     );
-    updateGridCells(result.newCells);
-    setAutoScheduleResult(result);
+
+    const criticals = stats.issues.filter((i) => i.severity === 'critical');
+    const warnings = stats.issues.filter((i) => i.severity === 'warning');
+
+    if (criticals.length === 0 && warnings.length === 0) {
+      setSuccessToast('🟢 TKB HỢP LỆ! Tất cả các quy định và ràng buộc đều được đảm bảo.');
+      setTimeout(() => setSuccessToast(null), 5000);
+    } else {
+      const issuesList = [
+        ...criticals.map((i) => i.message),
+        ...warnings.map((w) => `🟠 ${w.message}`),
+      ];
+      setValidationErrors(issuesList);
+      setIsErrorModalOpen(true);
+    }
   };
 
   const days: DayOfWeek[] = timeConfig.enabledDays;
@@ -306,30 +345,39 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
       };
 
       const proposedCells = [...workingCells, newCell];
-      const validation = validateConsecutiveSubjectLimit(
+      const consecVal = validateConsecutiveSubjectLimit(
         proposedCells,
         subjects,
         assignment.classId,
         targetDay,
         targetShift
       );
+      if (!consecVal.valid) {
+        alert(`🔴 Không thể xếp tiết này.\n${consecVal.reason}`);
+        return;
+      }
 
-      if (!validation.valid) {
-        const sub = subjects.find((s) => s.id === assignment.subjectId);
-        const subName = sub?.name || 'môn học';
-        alert(
-          `Không thể xếp tiết này.\nMôn ${subName} chỉ được xếp liên tiếp tối đa 2 tiết trong cùng một buổi.`
-        );
+      const shiftLimitVal = validateSubjectShiftLimit(
+        proposedCells,
+        subjects,
+        assignment.classId,
+        targetDay,
+        targetShift
+      );
+      if (!shiftLimitVal.valid) {
+        alert(`🔴 Không thể xếp tiết này.\n${shiftLimitVal.reason}`);
         return;
       }
 
       const gvbmVal = validateGvbmConstraints(
         proposedCells,
         teachers,
-        assignment.teacherId
+        assignment.teacherId,
+        targetDay,
+        targetShift
       );
-      if (!gvbmVal.valid) {
-        alert(`Không thể xếp tiết này.\n${gvbmVal.reason}`);
+      if (!gvbmVal.valid && gvbmVal.errorType === 'TEACHER_GAP_IN_SHIFT') {
+        alert(`🔴 Không thể xếp tiết này.\n${gvbmVal.reason}`);
         return;
       }
 
@@ -347,30 +395,39 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
           : c
       );
 
-      const validation = validateConsecutiveSubjectLimit(
+      const consecVal = validateConsecutiveSubjectLimit(
         proposedCells,
         subjects,
         assignment.classId,
         targetDay,
         targetShift
       );
+      if (!consecVal.valid) {
+        alert(`🔴 Không thể di chuyển tiết này.\n${consecVal.reason}`);
+        return;
+      }
 
-      if (!validation.valid) {
-        const sub = subjects.find((s) => s.id === assignment.subjectId);
-        const subName = sub?.name || 'môn học';
-        alert(
-          `Không thể xếp tiết này.\nMôn ${subName} chỉ được xếp liên tiếp tối đa 2 tiết trong cùng một buổi.`
-        );
+      const shiftLimitVal = validateSubjectShiftLimit(
+        proposedCells,
+        subjects,
+        assignment.classId,
+        targetDay,
+        targetShift
+      );
+      if (!shiftLimitVal.valid) {
+        alert(`🔴 Không thể di chuyển tiết này.\n${shiftLimitVal.reason}`);
         return;
       }
 
       const gvbmVal = validateGvbmConstraints(
         proposedCells,
         teachers,
-        assignment.teacherId
+        assignment.teacherId,
+        targetDay,
+        targetShift
       );
-      if (!gvbmVal.valid) {
-        alert(`Không thể chuyển tiết này.\n${gvbmVal.reason}`);
+      if (!gvbmVal.valid && gvbmVal.errorType === 'TEACHER_GAP_IN_SHIFT') {
+        alert(`🔴 Không thể di chuyển tiết này.\n${gvbmVal.reason}`);
         return;
       }
 
@@ -569,12 +626,21 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
           </button>
 
           <button
-            onClick={() => setIsReshuffleModalOpen(true)}
+            onClick={handleReshuffleConfirm}
             className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 border border-slate-700"
             title="Giải phóng các tiết chưa khóa để xếp lại"
           >
             <RotateCw className="w-3.5 h-3.5" />
             <span>Xếp lại</span>
+          </button>
+
+          <button
+            onClick={handleCheckTkb}
+            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 border border-slate-700"
+            title="Kiểm tra toàn bộ quy định và vi phạm của TKB hiện tại"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
+            <span>Kiểm tra TKB</span>
           </button>
 
           <button
@@ -950,8 +1016,14 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                                   )}
                                 </button>
                               ) : (
-                                <div className="h-full flex items-center justify-center text-[10px] text-slate-300 hover:text-slate-500 border border-dashed border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer font-medium">
-                                  + Trống
+                                <div className="h-full flex items-center justify-center text-[10px] text-slate-400 hover:text-slate-600 border border-dashed border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer font-medium text-center px-0.5">
+                                  {day === 'T2' && shift === 'morning' && pNum === 1 ? (
+                                    <span className="text-[9px] text-amber-700/80 font-bold">Ưu tiên trống (Chào cờ)</span>
+                                  ) : day === 'T6' && shift === 'morning' && pNum === 4 ? (
+                                    <span className="text-[9px] text-amber-700/80 font-bold">Ưu tiên trống (SHL)</span>
+                                  ) : (
+                                    '+ Trống'
+                                  )}
                                 </div>
                               )}
                             </td>
@@ -1200,6 +1272,22 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                 Đã hiểu, tiếp tục chỉnh sửa
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Auto Scheduling Progress Overlay */}
+      {isAutoScheduling && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full text-center space-y-4 border border-slate-200">
+            <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <div className="space-y-1">
+              <h3 className="font-bold text-slate-800 text-base">✨ Tự động xếp thời khóa biểu</h3>
+              <p className="text-sm font-semibold text-indigo-600 animate-pulse">{autoScheduleStepText}</p>
+            </div>
+            <p className="text-xs text-slate-500">
+              Hệ thống đang kiểm tra đầy đủ các ràng buộc cứng & ưu tiên các vị trí phù hợp.
+            </p>
           </div>
         </div>
       )}
