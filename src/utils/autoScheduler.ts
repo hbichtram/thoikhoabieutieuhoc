@@ -16,6 +16,7 @@ import {
   getTeacherMaxSessionsPerWeek,
 } from './teacherUtils';
 import { validateConsecutiveSubjectLimit, validateSubjectShiftLimit, validateGvbmConstraints } from './conflictChecker';
+import { normalizeScheduleCells, countPlacedPeriodsForAssignment } from './timetableUtils';
 
 /**
  * Priority slots to keep empty during Auto Schedule (T2 Morning P1 - Chào cờ & T6 Morning P4 - Sinh hoạt lớp).
@@ -69,7 +70,7 @@ export function runAutoScheduler(
   onlyUnlocked: boolean = true
 ): AutoScheduleResult {
   // Preserve all existing cells as baseline (user placed or locked cells must not be overwritten or removed)
-  const baseCells: ScheduleCell[] = [...currentCells];
+  const baseCells: ScheduleCell[] = normalizeScheduleCells(currentCells || [], assignments);
 
   const teacherMap = new Map(teachers.map((t) => [t.id, t]));
   const classMap = new Map(classes.map((c) => [c.id, c]));
@@ -84,7 +85,7 @@ export function runAutoScheduler(
 
   assignments.forEach((a) => {
     totalRequired += a.periodsPerWeek;
-    const placedLockedCount = baseCells.filter((c) => c.assignmentId === a.id).length;
+    const placedLockedCount = countPlacedPeriodsForAssignment(baseCells, a);
     const needed = a.periodsPerWeek - placedLockedCount;
     if (needed > 0) {
       unplacedQueue.push({ assignment: a, periodsNeeded: needed });

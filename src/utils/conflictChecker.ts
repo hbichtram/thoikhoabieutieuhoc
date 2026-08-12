@@ -18,6 +18,7 @@ import {
   getTeacherSessions,
   getTeacherMaxSessionsPerWeek,
 } from './teacherUtils';
+import { normalizeScheduleCells, isCellForAssignment, countPlacedPeriodsForAssignment } from './timetableUtils';
 
 export interface SubjectShiftValidationResult {
   valid: boolean;
@@ -280,8 +281,9 @@ export function checkFullSchedule(
   subjects: Subject[],
   assignments: Assignment[],
   timeConfig: TimeConfig,
-  cells: ScheduleCell[]
+  rawCells: ScheduleCell[]
 ): ScheduleStats {
+  const cells = normalizeScheduleCells(rawCells || [], assignments);
   const conflicts: ConflictIssue[] = [];
   const missingPeriods: MissingPeriodItem[] = [];
   const warnings: ConflictIssue[] = [];
@@ -303,16 +305,9 @@ export function checkFullSchedule(
       ? Math.min(100, Math.round((totalPlacedPeriods / totalRequiredPeriods) * 100))
       : 0;
 
-  // Map to track placed periods per assignment
-  const assignmentPlacedCount = new Map<string, number>();
-  cells.forEach((cell) => {
-    const current = assignmentPlacedCount.get(cell.assignmentId) || 0;
-    assignmentPlacedCount.set(cell.assignmentId, current + 1);
-  });
-
   // Check C & D: Thiếu tiết & Thừa tiết
   assignments.forEach((a) => {
-    const placed = assignmentPlacedCount.get(a.id) || 0;
+    const placed = countPlacedPeriodsForAssignment(cells, a);
     const cls = classMap.get(a.classId);
     const sub = subjectMap.get(a.subjectId);
     const tch = teacherMap.get(a.teacherId);

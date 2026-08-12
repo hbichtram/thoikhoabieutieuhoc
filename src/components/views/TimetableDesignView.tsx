@@ -38,6 +38,7 @@ import {
   getTeacherSessionCount,
   getTeacherMaxSessionsPerWeek,
 } from '../../utils/teacherUtils';
+import { normalizeScheduleCells, isCellForAssignment, countPlacedPeriodsForAssignment } from '../../utils/timetableUtils';
 
 interface TimetableDesignViewProps {
   cells: ScheduleCell[];
@@ -50,21 +51,6 @@ interface TimetableDesignViewProps {
   onHasUnsavedChangesChange?: (hasUnsaved: boolean) => void;
 }
 
-// Normalization helper for legacy cells (e.g. afternoon cells stored with periodNumber 5..7)
-const normalizeCell = (c: ScheduleCell): ScheduleCell => {
-  if (c.shift === 'afternoon' && c.periodNumber >= 5) {
-    return { ...c, periodNumber: c.periodNumber - 4 };
-  }
-  if (c.periodNumber >= 5) {
-    return { ...c, shift: 'afternoon', periodNumber: c.periodNumber - 4 };
-  }
-  return c;
-};
-
-const normalizeCells = (cellList: ScheduleCell[]): ScheduleCell[] => {
-  return cellList.map(normalizeCell);
-};
-
 export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
   cells,
   teachers,
@@ -76,11 +62,11 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
   onHasUnsavedChangesChange,
 }) => {
   // Working schedule state vs last saved schedule state with normalization
-  const [savedCells, setSavedCells] = useState<ScheduleCell[]>(() => normalizeCells(cells));
-  const [workingCells, setWorkingCells] = useState<ScheduleCell[]>(() => normalizeCells(cells));
+  const [savedCells, setSavedCells] = useState<ScheduleCell[]>(() => normalizeScheduleCells(cells, assignments));
+  const [workingCells, setWorkingCells] = useState<ScheduleCell[]>(() => normalizeScheduleCells(cells, assignments));
 
   // History stack for Undo / Redo
-  const [history, setHistory] = useState<ScheduleCell[][]>(() => [normalizeCells(cells)]);
+  const [history, setHistory] = useState<ScheduleCell[][]>(() => [normalizeScheduleCells(cells, assignments)]);
   const [historyIndex, setHistoryIndex] = useState<number>(0);
 
   // Last saved timestamp
@@ -127,14 +113,14 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
 
   // Keep savedCells & workingCells in sync if external props `cells` change initially or after load
   useEffect(() => {
-    const normalized = normalizeCells(cells);
+    const normalized = normalizeScheduleCells(cells, assignments);
     if (JSON.stringify(normalized) !== JSON.stringify(savedCells) && historyIndex === 0) {
       setSavedCells(normalized);
       setWorkingCells(normalized);
       setHistory([normalized]);
       setHistoryIndex(0);
     }
-  }, [cells]);
+  }, [cells, assignments]);
 
   // Compute if there are unsaved changes
   const hasUnsavedChanges = JSON.stringify(workingCells) !== JSON.stringify(savedCells);
@@ -157,14 +143,16 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
     };
   }, [hasUnsavedChanges, onHasUnsavedChangesChange]);
 
-  // Helper to mutate working cells with history tracking
+  // Helper to mutate working cells with history tracking and real-time App state sync
   const updateGridCells = (newCells: ScheduleCell[]) => {
-    const normalized = normalizeCells(newCells);
+    const normalized = normalizeScheduleCells(newCells, assignments);
+    console.log(`[TKB DESIGN] scheduleEntries.length: ${normalized.length}`);
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push(normalized);
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
     setWorkingCells(normalized);
+    onUpdateCells(normalized);
   };
 
   // Undo Handler
@@ -292,7 +280,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
 
   // Calculate unassigned periods for each assignment of current entity using workingCells
   const unassignedTrayItems = currentEntityAssignments.map((a) => {
-    const placedCount = workingCells.filter((c) => c.assignmentId === a.id).length;
+    const placedCount = countPlacedPeriodsForAssignment(workingCells, a);
     const remainingCount = a.periodsPerWeek - placedCount;
     return {
       assignment: a,
@@ -364,7 +352,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
 
     // Rule 1: Dragging from unassigned tray (new placement) -> STRICTLY 1 PERIOD
     if (!sourceCellId) {
-      const placedCount = workingCells.filter((c) => c.assignmentId === assignment.id).length;
+      const placedCount = countPlacedPeriodsForAssignment(workingCells, assignment);
       if (placedCount >= assignment.periodsPerWeek) {
         alert('⚠️ Môn học này đã xếp đủ số tiết theo quy định!');
         return;
@@ -527,7 +515,8 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
   // Execute Save
   const handleConfirmSave = () => {
     try {
-      const normalizedWorking = normalizeCells(workingCells);
+      const normalizedWorking = normalizeScheduleCells(workingCells, assignments);
+      console.log(`[TKB SAVE] scheduleEntries.length: ${normalizedWorking.length}`);
       onUpdateCells(normalizedWorking);
       setSavedCells(normalizedWorking);
 

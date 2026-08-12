@@ -282,6 +282,8 @@ export async function saveFullStateToFirestore(
     teachers: normalizedTeachers,
   };
 
+  console.log(`[FIRESTORE SAVED] scheduleEntries.length: ${cleanFullData.cells ? cleanFullData.cells.length : 0}`);
+
   const payloadStr = JSON.stringify(cleanFullData);
 
   // Write full data bundle to timetable_data/{uid}

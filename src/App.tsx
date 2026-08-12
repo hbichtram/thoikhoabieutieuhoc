@@ -55,6 +55,7 @@ import {
 import { User } from 'firebase/auth';
 import { checkFullSchedule } from './utils/conflictChecker';
 import { normalizeTeacher } from './utils/teacherUtils';
+import { normalizeScheduleCells } from './utils/timetableUtils';
 
 const APP_BUILD_VERSION = "TKB-SMART-FIREBASE-FIX-2026-08-11";
 console.log("[APP BUILD VERSION]", APP_BUILD_VERSION);
@@ -163,8 +164,9 @@ export default function App() {
             setStoredTimeConfig(remoteData.timeConfig);
           }
           if (remoteData.cells) {
-            setCells(remoteData.cells);
-            setStoredScheduleCells(remoteData.cells);
+            const normalizedCells = normalizeScheduleCells(remoteData.cells, remoteData.assignments || assignments);
+            setCells(normalizedCells);
+            setStoredScheduleCells(normalizedCells);
           }
           if (remoteData.versions) {
             setVersions(remoteData.versions);

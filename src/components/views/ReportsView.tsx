@@ -18,6 +18,7 @@ import {
   PeriodShift,
 } from '../../types';
 import { getTeacherSessions, getTeacherGapPeriods } from '../../utils/teacherUtils';
+import { normalizeScheduleCells, isCellForAssignment, countPlacedPeriodsForAssignment } from '../../utils/timetableUtils';
 
 interface ReportsViewProps {
   cells: ScheduleCell[];
@@ -280,6 +281,17 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   assignments,
   timeConfig,
 }) => {
+  const normalizedCells = normalizeScheduleCells(cells || [], assignments);
+
+  React.useEffect(() => {
+    console.log(`[REPORT LOAD] scheduleEntries.length: ${normalizedCells.length}`);
+    let totalPlaced = 0;
+    assignments.forEach((a) => {
+      totalPlaced += countPlacedPeriodsForAssignment(normalizedCells, a);
+    });
+    console.log(`[REPORT CALC] placedCount: ${totalPlaced}`);
+  }, [normalizedCells, assignments]);
+
   const [reportType, setReportType] = useState<'school' | 'classes' | 'teachers' | 'workload'>(
     'school'
   );
@@ -475,7 +487,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                   timeConfig={timeConfig}
                   days={days}
                   classItem={cls}
-                  cells={cells}
+                  cells={normalizedCells}
                   teachers={teachers}
                   classes={classes}
                   subjects={subjects}
@@ -513,7 +525,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                   timeConfig={timeConfig}
                   days={days}
                   classItem={cls}
-                  cells={cells}
+                  cells={normalizedCells}
                   teachers={teachers}
                   classes={classes}
                   subjects={subjects}
@@ -551,7 +563,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                   timeConfig={timeConfig}
                   days={days}
                   teacher={tch}
-                  cells={cells}
+                  cells={normalizedCells}
                   teachers={teachers}
                   classes={classes}
                   subjects={subjects}
@@ -590,8 +602,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                       const totalPeriods = assignments
                         .filter((a) => a.teacherId === t.id)
                         .reduce((sum, a) => sum + a.periodsPerWeek, 0);
-                      const sessionCount = getTeacherSessions(t.id, cells).size;
-                      const gapCount = getTeacherGapPeriods(t.id, cells);
+                      const sessionCount = getTeacherSessions(t.id, normalizedCells).size;
+                      const gapCount = getTeacherGapPeriods(t.id, normalizedCells);
 
                       let optLabel = '🟢 Tối ưu xuất sắc';
                       let optClass = 'bg-emerald-50 text-emerald-800 border-emerald-200';
