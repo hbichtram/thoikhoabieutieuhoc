@@ -7,6 +7,7 @@ import {
   Sparkles,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   Info,
   X,
   Save,
@@ -27,6 +28,8 @@ import {
   DayOfWeek,
   PeriodShift,
   SuggestionSlot,
+  MissingPeriodItem,
+  ConflictIssue,
 } from '../../types';
 import { getSlotSuggestions, checkFullSchedule, validateConsecutiveSubjectLimit, validateSubjectShiftLimit, validateGvbmConstraints } from '../../utils/conflictChecker';
 import { getStoredLastSavedAt, setStoredLastSavedAt } from '../../services/storage';
@@ -86,6 +89,9 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
   // Modal & Toast States
   const [isConfirmSaveModalOpen, setIsConfirmSaveModalOpen] = useState(false);
   const [isErrorModalOpen, setIsErrorModalOpen] = useState(false);
+  const [validationCategory, setValidationCategory] = useState<'empty' | 'missing' | 'conflict'>('conflict');
+  const [validationMissingItems, setValidationMissingItems] = useState<MissingPeriodItem[]>([]);
+  const [validationConflicts, setValidationConflicts] = useState<ConflictIssue[]>([]);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isReshuffleModalOpen, setIsReshuffleModalOpen] = useState(false);
   const [isAutoScheduling, setIsAutoScheduling] = useState(false);
@@ -224,18 +230,50 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
       workingCells
     );
 
-    const criticals = stats.issues.filter((i) => i.severity === 'critical');
-    const warnings = stats.issues.filter((i) => i.severity === 'warning');
+    if (workingCells.length === 0) {
+      setValidationCategory('empty');
+      setValidationErrors([
+        'Thời khóa biểu hiện tại chưa có tiết học nào được xếp.'
+      ]);
+      setValidationMissingItems([]);
+      setValidationConflicts([]);
+      setIsErrorModalOpen(true);
+      return;
+    }
 
-    if (criticals.length === 0 && warnings.length === 0) {
-      setSuccessToast('🟢 TKB HỢP LỆ! Tất cả các quy định và ràng buộc đều được đảm bảo.');
+    const hardConflicts = stats.conflicts || [];
+    const missingItems = stats.missingPeriods || [];
+    const warningItems = stats.warnings || [];
+
+    if (hardConflicts.length === 0 && missingItems.length === 0 && warningItems.length === 0) {
+      setSuccessToast('🟢 TKB HOÀN HẢO! Tất cả các tiết đã được xếp đủ và không phát sinh bất kỳ xung đột nào.');
       setTimeout(() => setSuccessToast(null), 5000);
-    } else {
-      const issuesList = [
-        ...criticals.map((i) => i.message),
-        ...warnings.map((w) => `🟠 ${w.message}`),
-      ];
-      setValidationErrors(issuesList);
+      return;
+    }
+
+    if (hardConflicts.length > 0) {
+      setValidationCategory('conflict');
+      setValidationConflicts(hardConflicts);
+      setValidationMissingItems(missingItems);
+      setValidationErrors(hardConflicts.map((c) => c.message));
+      setIsErrorModalOpen(true);
+      return;
+    }
+
+    if (missingItems.length > 0) {
+      setValidationCategory('missing');
+      setValidationMissingItems(missingItems);
+      setValidationConflicts([]);
+      setValidationErrors(missingItems.map((m) => m.message));
+      setIsErrorModalOpen(true);
+      return;
+    }
+
+    if (warningItems.length > 0) {
+      setValidationCategory('conflict');
+      setValidationConflicts(warningItems);
+      setValidationMissingItems([]);
+      setValidationErrors(warningItems.map((w) => `🟠 ${w.message}`));
       setIsErrorModalOpen(true);
     }
   };
@@ -435,7 +473,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
     }
   };
 
-  // Open Save Confirmation or Error Modal
+  // Open Save Confirmation or Validation Modal
   const handleInitiateSave = () => {
     const stats = checkFullSchedule(
       teachers,
@@ -446,14 +484,44 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
       workingCells
     );
 
-    const criticalIssues = stats.issues.filter((i) => i.severity === 'critical');
-
-    if (criticalIssues.length > 0) {
-      setValidationErrors(criticalIssues.map((i) => i.message));
+    // 1. EMPTY TIMETABLE: 0 cells placed
+    if (workingCells.length === 0) {
+      setValidationCategory('empty');
+      setValidationErrors([
+        'Thời khóa biểu hiện tại chưa có tiết học nào được xếp.'
+      ]);
+      setValidationMissingItems([]);
+      setValidationConflicts([]);
       setIsErrorModalOpen(true);
-    } else {
-      setIsConfirmSaveModalOpen(true);
+      return;
     }
+
+    const hardConflicts = stats.conflicts || [];
+    const missingItems = stats.missingPeriods || [];
+
+    // 2. HARD CONFLICTS PRESENT
+    if (hardConflicts.length > 0) {
+      setValidationCategory('conflict');
+      setValidationConflicts(hardConflicts);
+      setValidationMissingItems(missingItems);
+      setValidationErrors(hardConflicts.map((c) => c.message));
+      setIsErrorModalOpen(true);
+      return;
+    }
+
+    // 3. NO HARD CONFLICTS, BUT MISSING PERIODS EXIST
+    if (missingItems.length > 0) {
+      setValidationCategory('missing');
+      setValidationMissingItems(missingItems);
+      setValidationConflicts([]);
+      setValidationErrors(missingItems.map((m) => m.message));
+      setIsErrorModalOpen(true);
+      return;
+    }
+
+    // 4. PERFECT TIMETABLE (0 Hard Conflicts, 0 Missing Periods)
+    setValidationCategory('conflict');
+    setIsConfirmSaveModalOpen(true);
   };
 
   // Execute Save
@@ -1079,47 +1147,139 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
         </div>
       )}
 
-      {/* Error Validation Modal */}
+      {/* Validation Result Modal (Empty / Missing / Conflict) */}
       {isErrorModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-4 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-red-50 text-red-600 flex items-center justify-center shrink-0">
-                  <ShieldAlert className="w-5 h-5" />
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 space-y-4 animate-in zoom-in-95 duration-150">
+            {/* Header section based on Category */}
+            {validationCategory === 'empty' && (
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                    <AlertCircle className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">⚠️ THỜI KHÓA BIỂU TRỐNG</h3>
+                    <p className="text-xs text-amber-700 font-semibold mt-0.5">
+                      Chưa có tiết học nào được xếp vào bảng
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 text-base">⚠️ KHÔNG THỂ LƯU TKB</h3>
-                  <p className="text-xs text-red-600 font-semibold mt-0.5">
-                    Phát hiện {validationErrors.length} lỗi xung đột:
-                  </p>
+                <button
+                  onClick={() => setIsErrorModalOpen(false)}
+                  className="p-1 hover:bg-slate-100 text-slate-400 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+
+            {validationCategory === 'missing' && (
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">⚠️ TKB CHƯA HOÀN THÀNH (THIẾU TIẾT)</h3>
+                    <p className="text-xs text-amber-700 font-semibold mt-0.5">
+                      Còn {validationMissingItems.length} phân công chưa xếp đủ tiết ({validationMissingItems.reduce((a, b) => a + b.missing, 0)} tiết còn thiếu)
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsErrorModalOpen(false)}
+                  className="p-1 hover:bg-slate-100 text-slate-400 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+
+            {validationCategory === 'conflict' && (
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">🔴 XUNG ĐỘT THỜI KHÓA BIỂU</h3>
+                    <p className="text-xs text-red-600 font-semibold mt-0.5">
+                      Phát hiện {validationConflicts.length > 0 ? validationConflicts.length : validationErrors.length} lỗi vi phạm quy định bắt buộc:
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsErrorModalOpen(false)}
+                  className="p-1 hover:bg-slate-100 text-slate-400 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+
+            {/* Content Body */}
+            {validationCategory === 'empty' && (
+              <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-2 leading-relaxed">
+                <p className="font-bold text-sm text-amber-950">Thời khóa biểu hiện tại đang trống hoàn toàn.</p>
+                <p>
+                  Hệ thống không thể lưu thời khóa biểu rỗng. Vui lòng kéo-thả môn học từ khay phân công hoặc sử dụng nút <strong>"✨ Tự động xếp"</strong> để khởi tạo TKB trước khi lưu.
+                </p>
+              </div>
+            )}
+
+            {validationCategory === 'missing' && (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-600">
+                  Thời khóa biểu chưa thể lưu chính thức vì còn các tiết chưa được xếp đủ theo Phân công chuyên môn:
+                </p>
+                <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
+                  {validationMissingItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-medium text-amber-900 flex items-center justify-between gap-2"
+                    >
+                      <div>
+                        <span className="font-bold">Lớp {item.className}</span> —{' '}
+                        <span className="font-semibold text-blue-800">{item.subjectName}</span> ({item.teacherName})
+                      </div>
+                      <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded font-bold text-[11px] shrink-0">
+                        Mới xếp {item.placed}/{item.required} tiết (thiếu {item.missing})
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <button
-                onClick={() => setIsErrorModalOpen(false)}
-                className="p-1 hover:bg-slate-100 text-slate-400 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            )}
 
-            {/* Error Message List */}
-            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-              {validationErrors.map((err, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs font-medium text-red-900 leading-relaxed"
-                >
-                  {err}
+            {validationCategory === 'conflict' && (
+              <div className="space-y-3">
+                <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
+                  {validationErrors.map((err, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs font-medium text-red-900 leading-relaxed"
+                    >
+                      {err}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
 
-            <p className="text-xs text-slate-500 italic">
-              Vui lòng điều chỉnh lại thời khóa biểu để khắc phục các xung đột trên trước khi lưu.
-            </p>
+                {validationMissingItems.length > 0 && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-medium">
+                    ⚠️ Ngoài các lỗi xung đột trên, thời khóa biểu còn thiếu {validationMissingItems.reduce((a, b) => a + b.missing, 0)} tiết chưa xếp ({validationMissingItems.length} phân công).
+                  </div>
+                )}
+              </div>
+            )}
 
-            <div className="flex items-center justify-end pt-2">
+            {/* Footer */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <p className="text-xs text-slate-500 italic">
+                {validationCategory === 'empty' && 'Hãy xếp TKB trước khi lưu.'}
+                {validationCategory === 'missing' && 'Hãy xếp đủ các tiết còn thiếu để hoàn tất TKB.'}
+                {validationCategory === 'conflict' && 'Hãy sửa các lỗi xung đột đỏ trước khi lưu.'}
+              </p>
               <button
                 onClick={() => setIsErrorModalOpen(false)}
                 className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all"

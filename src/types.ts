@@ -114,11 +114,36 @@ export interface SuggestionSlot {
   reason?: string;
 }
 
+export interface MissingPeriodItem {
+  id: string;
+  classId: string;
+  className: string;
+  subjectId: string;
+  subjectName: string;
+  teacherId: string;
+  teacherName: string;
+  required: number;
+  placed: number;
+  missing: number;
+  message: string;
+}
+
 export interface ScheduleStats {
+  totalTeachers?: number;
+  totalClasses?: number;
+  totalSubjects?: number;
+  totalRequiredPeriods?: number;
+  totalPlacedPeriods?: number;
+  assignedPeriods?: number;
+  requiredPeriods?: number;
+  completionPercentage: number;
   criticalErrorCount: number;
   warningCount: number;
-  assignedPeriods: number;
-  requiredPeriods: number;
-  completionPercentage: number;
+  missingCount?: number;
+  totalMissingPeriodsCount?: number;
+  issues?: ConflictIssue[];
+  conflicts?: ConflictIssue[];
+  missingPeriods?: MissingPeriodItem[];
+  warnings?: ConflictIssue[];
 }
 

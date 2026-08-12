@@ -9,6 +9,8 @@ import {
   SuggestionSlot,
   DayOfWeek,
   PeriodShift,
+  MissingPeriodItem,
+  ScheduleStats,
 } from '../types';
 import {
   getTeacherMaxWeeklyPeriods,
@@ -272,18 +274,6 @@ export function validateConsecutiveSubjectLimit(
   return { valid: true };
 }
 
-export interface ScheduleStats {
-  totalTeachers: number;
-  totalClasses: number;
-  totalSubjects: number;
-  totalRequiredPeriods: number;
-  totalPlacedPeriods: number;
-  completionPercentage: number;
-  criticalErrorCount: number;
-  warningCount: number;
-  issues: ConflictIssue[];
-}
-
 export function checkFullSchedule(
   teachers: Teacher[],
   classes: ClassItem[],
@@ -292,7 +282,9 @@ export function checkFullSchedule(
   timeConfig: TimeConfig,
   cells: ScheduleCell[]
 ): ScheduleStats {
-  const issues: ConflictIssue[] = [];
+  const conflicts: ConflictIssue[] = [];
+  const missingPeriods: MissingPeriodItem[] = [];
+  const warnings: ConflictIssue[] = [];
 
   // Helper maps
   const teacherMap = new Map(teachers.map((t) => [t.id, t]));
@@ -330,25 +322,27 @@ export function checkFullSchedule(
     const tchName = tch ? tch.name : 'GV ?';
 
     if (placed < a.periodsPerWeek) {
-      issues.push({
+      const missing = a.periodsPerWeek - placed;
+      missingPeriods.push({
         id: `missing_${a.id}`,
-        type: 'missing_periods',
-        severity: 'critical',
-        message: `Lớp ${className} môn ${subName} (${tchName}): Mới xếp ${placed}/${a.periodsPerWeek} tiết (Thiếu ${
-          a.periodsPerWeek - placed
-        } tiết).`,
         classId: a.classId,
+        className,
         subjectId: a.subjectId,
+        subjectName: subName,
         teacherId: a.teacherId,
+        teacherName: tchName,
+        required: a.periodsPerWeek,
+        placed,
+        missing,
+        message: `Lớp ${className} - Môn ${subName} (${tchName}): mới xếp ${placed}/${a.periodsPerWeek} tiết (thiếu ${missing} tiết).`,
       });
     } else if (placed > a.periodsPerWeek) {
-      issues.push({
+      const extra = placed - a.periodsPerWeek;
+      conflicts.push({
         id: `extra_${a.id}`,
         type: 'extra_periods',
         severity: 'critical',
-        message: `Lớp ${className} môn ${subName} (${tchName}): Đã xếp ${placed}/${a.periodsPerWeek} tiết (Thừa ${
-          placed - a.periodsPerWeek
-        } tiết).`,
+        message: `🔴 Lớp ${className} - Môn ${subName} (${tchName}): đã xếp ${placed}/${a.periodsPerWeek} tiết (thừa ${extra} tiết).`,
         classId: a.classId,
         subjectId: a.subjectId,
         teacherId: a.teacherId,
@@ -410,11 +404,11 @@ export function checkFullSchedule(
       if (isUnavailable) {
         const cls = classMap.get(cell.classId);
         const sub = subjectMap.get(cell.subjectId);
-        issues.push({
+        conflicts.push({
           id: `unavail_${cell.id}`,
           type: 'teacher_unavailable',
           severity: 'critical',
-          message: `${tch.name} bị xếp tiết vào thời gian đã khóa (${cell.day} - Buổi ${
+          message: `🔴 ${tch.name} bị xếp tiết vào thời gian đã khóa (${cell.day} - Buổi ${
             cell.shift === 'morning' ? 'Sáng' : 'Chiều'
           } Tiết ${cell.periodNumber}) tại lớp ${cls?.name || ''} môn ${sub?.name || ''}.`,
           teacherId: cell.teacherId,
@@ -433,11 +427,11 @@ export function checkFullSchedule(
     );
     if (isDisabledBySchool) {
       const cls = classMap.get(cell.classId);
-      issues.push({
+      conflicts.push({
         id: `disabled_${cell.id}`,
         type: 'teacher_unavailable',
         severity: 'critical',
-        message: `Lớp ${cls?.name || ''} bị xếp tiết vào khung thời gian trường đã tắt (${
+        message: `🔴 Lớp ${cls?.name || ''} bị xếp tiết vào khung thời gian trường đã tắt (${
           cell.day
         } - ${cell.shift === 'morning' ? 'Sáng' : 'Chiều'} Tiết ${cell.periodNumber}).`,
         classId: cell.classId,
@@ -456,11 +450,11 @@ export function checkFullSchedule(
       const classNames = cellGroup
         .map((c) => classMap.get(c.classId)?.name || 'Lớp ?')
         .join(', ');
-      issues.push({
+      conflicts.push({
         id: `overlap_t_${key}`,
         type: 'teacher_overlap',
         severity: 'critical',
-        message: `${tch?.name || 'Giáo viên'} bị trùng tiết ở các lớp [${classNames}] vào ${
+        message: `🔴 ${tch?.name || 'Giáo viên'} bị trùng tiết ở các lớp [${classNames}] vào ${
           firstCell.day
         } - ${firstCell.shift === 'morning' ? 'Sáng' : 'Chiều'} Tiết ${firstCell.periodNumber}.`,
         teacherId: firstCell.teacherId,
@@ -479,11 +473,11 @@ export function checkFullSchedule(
       const subNames = cellGroup
         .map((c) => subjectMap.get(c.subjectId)?.name || 'Môn ?')
         .join(', ');
-      issues.push({
+      conflicts.push({
         id: `overlap_c_${key}`,
         type: 'class_overlap',
         severity: 'critical',
-        message: `Lớp ${cls?.name || 'Lớp'} bị trùng 2 môn [${subNames}] cùng thời điểm (${
+        message: `🔴 Lớp ${cls?.name || 'Lớp'} bị trùng 2 môn [${subNames}] cùng thời điểm (${
           firstCell.day
         } - ${firstCell.shift === 'morning' ? 'Sáng' : 'Chiều'} Tiết ${firstCell.periodNumber}).`,
         classId: firstCell.classId,
@@ -501,7 +495,7 @@ export function checkFullSchedule(
     if (assigned > maxW) {
       const diff = assigned - maxW;
       const typeText = tch.type === 'homeroom' ? 'GVCN' : 'GV bộ môn';
-      issues.push({
+      warnings.push({
         id: `maxw_${tch.id}`,
         type: 'teacher_max_periods',
         severity: 'warning',
@@ -514,7 +508,7 @@ export function checkFullSchedule(
     const maxSessions = getTeacherMaxSessionsPerWeek(tch);
     const sessions = getTeacherSessions(tch.id, cells);
     if (sessions.size > maxSessions) {
-      issues.push({
+      conflicts.push({
         id: `maxs_${tch.id}`,
         type: 'teacher_max_periods',
         severity: 'critical',
@@ -529,7 +523,7 @@ export function checkFullSchedule(
     const [teacherId, day] = key.split('_');
     const tch = teacherMap.get(teacherId);
     if (tch && count > tch.maxPeriodsPerDay) {
-      issues.push({
+      warnings.push({
         id: `maxp_${key}`,
         type: 'teacher_max_periods',
         severity: 'warning',
@@ -556,7 +550,7 @@ export function checkFullSchedule(
     }
     if (maxStreak >= 4) {
       const tch = teacherMap.get(teacherId);
-      issues.push({
+      warnings.push({
         id: `consec_${key}`,
         type: 'consecutive_periods',
         severity: 'warning',
@@ -576,7 +570,7 @@ export function checkFullSchedule(
     if (count > 2) {
       const cls = classMap.get(classId);
       const sub = subjectMap.get(subjectId);
-      issues.push({
+      warnings.push({
         id: `cluster_${key}`,
         type: 'subject_clustering',
         severity: 'warning',
@@ -591,7 +585,6 @@ export function checkFullSchedule(
   // Check I: Critical Consecutive Subject Limit (>2 consecutive periods of same subject in a shift)
   const consecutiveCheck = validateConsecutiveSubjectLimit(cells, subjects);
   if (!consecutiveCheck.valid) {
-    // Scan all groups to generate specific critical issue entries
     const groups = new Map<string, ScheduleCell[]>();
     cells.forEach((c) => {
       const key = `${c.classId}_${c.day}_${c.shift}`;
@@ -617,7 +610,7 @@ export function checkFullSchedule(
 
         if (c1 && c2 && c3 && c1.subjectId && c1.subjectId === c2.subjectId && c1.subjectId === c3.subjectId) {
           const sub = subjectMap.get(c1.subjectId);
-          issues.push({
+          conflicts.push({
             id: `consec_sub_${key}_${p}`,
             type: 'subject_clustering',
             severity: 'critical',
@@ -652,7 +645,7 @@ export function checkFullSchedule(
         const dayLabel = day === 'T2' ? 'Thứ 2' : day === 'T3' ? 'Thứ 3' : day === 'T4' ? 'Thứ 4' : day === 'T5' ? 'Thứ 5' : 'Thứ 6';
         const shiftLabel = shift === 'morning' ? 'Sáng' : 'Chiều';
 
-        issues.push({
+        conflicts.push({
           id: `subj_shift_limit_${key}`,
           type: 'subject_shift_limit',
           severity: 'critical',
@@ -666,8 +659,79 @@ export function checkFullSchedule(
     });
   }
 
-  const criticalErrorCount = issues.filter((i) => i.severity === 'critical').length;
-  const warningCount = issues.filter((i) => i.severity === 'warning').length;
+  // Check L: GVBM Constraints (Min 2 periods/shift, No gaps in shift)
+  const gvbmCheck = validateGvbmConstraints(cells, teachers);
+  if (!gvbmCheck.valid) {
+    const teacherShifts = new Map<string, ScheduleCell[]>();
+    cells.forEach((c) => {
+      const key = `${c.teacherId}_${c.day}_${c.shift}`;
+      if (!teacherShifts.has(key)) teacherShifts.set(key, []);
+      teacherShifts.get(key)!.push(c);
+    });
+
+    teacherShifts.forEach((cellGroup, key) => {
+      const [teacherId, day, shift] = key.split('_') as [string, DayOfWeek, PeriodShift];
+      const tch = teacherMap.get(teacherId);
+      if (tch && tch.type !== 'homeroom') {
+        const dayLabel = day === 'T2' ? 'Thứ 2' : day === 'T3' ? 'Thứ 3' : day === 'T4' ? 'Thứ 4' : day === 'T5' ? 'Thứ 5' : 'Thứ 6';
+        const shiftLabel = shift === 'morning' ? 'Sáng' : 'Chiều';
+
+        if (cellGroup.length === 1) {
+          conflicts.push({
+            id: `gvbm_min_${key}`,
+            type: 'teacher_min_periods_per_shift',
+            severity: 'critical',
+            message: `🔴 GVBM "${tch.name}" - ${dayLabel} - Buổi ${shiftLabel}: Chỉ có 1 tiết dạy trong buổi. Quy định: GVBM phải có tối thiểu 2 tiết/buổi.`,
+            teacherId,
+            day,
+            shift,
+          });
+        } else if (cellGroup.length >= 2) {
+          const periods = cellGroup
+            .map((c) => (c.periodNumber > 4 ? c.periodNumber - 4 : c.periodNumber))
+            .sort((a, b) => a - b);
+          const periodSet = new Set(periods);
+          const minP = periods[0];
+          const maxP = periods[periods.length - 1];
+          let hasGap = false;
+          for (let p = minP; p <= maxP; p++) {
+            if (!periodSet.has(p)) {
+              hasGap = true;
+              break;
+            }
+          }
+          if (hasGap) {
+            conflicts.push({
+              id: `gvbm_gap_${key}`,
+              type: 'teacher_gap_in_shift',
+              severity: 'critical',
+              message: `🔴 GVBM "${tch.name}" - ${dayLabel} - Buổi ${shiftLabel}: Các tiết dạy bị gián đoạn, không được có tiết trống giữa.`,
+              teacherId,
+              day,
+              shift,
+            });
+          }
+        }
+      }
+    });
+  }
+
+  // Combined issues array for backward compatibility
+  const issues: ConflictIssue[] = [
+    ...conflicts,
+    ...warnings,
+    ...missingPeriods.map((m) => ({
+      id: m.id,
+      type: 'missing_periods' as const,
+      severity: 'critical' as const,
+      message: m.message,
+      classId: m.classId,
+      subjectId: m.subjectId,
+      teacherId: m.teacherId,
+    })),
+  ];
+
+  const totalMissingPeriodsCount = missingPeriods.reduce((acc, m) => acc + m.missing, 0);
 
   return {
     totalTeachers: teachers.length,
@@ -675,10 +739,17 @@ export function checkFullSchedule(
     totalSubjects: subjects.length,
     totalRequiredPeriods,
     totalPlacedPeriods,
+    assignedPeriods: totalPlacedPeriods,
+    requiredPeriods: totalRequiredPeriods,
     completionPercentage,
-    criticalErrorCount,
-    warningCount,
+    criticalErrorCount: conflicts.length, // STRICTLY HARD CONFLICTS!
+    warningCount: warnings.length,
+    missingCount: missingPeriods.length,
+    totalMissingPeriodsCount,
     issues,
+    conflicts,
+    missingPeriods,
+    warnings,
   };
 }
 
