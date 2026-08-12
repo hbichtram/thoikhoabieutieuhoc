@@ -28,7 +28,7 @@ import {
   PeriodShift,
   SuggestionSlot,
 } from '../../types';
-import { getSlotSuggestions, checkFullSchedule } from '../../utils/conflictChecker';
+import { getSlotSuggestions, checkFullSchedule, validateConsecutiveSubjectLimit } from '../../utils/conflictChecker';
 import { getStoredLastSavedAt, setStoredLastSavedAt } from '../../services/storage';
 import { runAutoScheduler, AutoScheduleResult } from '../../utils/autoScheduler';
 import {
@@ -305,10 +305,28 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
         isLocked: false,
       };
 
-      updateGridCells([...workingCells, newCell]);
+      const proposedCells = [...workingCells, newCell];
+      const validation = validateConsecutiveSubjectLimit(
+        proposedCells,
+        subjects,
+        assignment.classId,
+        targetDay,
+        targetShift
+      );
+
+      if (!validation.valid) {
+        const sub = subjects.find((s) => s.id === assignment.subjectId);
+        const subName = sub?.name || 'môn học';
+        alert(
+          `Không thể xếp tiết này.\nMôn ${subName} chỉ được xếp liên tiếp tối đa 2 tiết trong cùng một buổi.`
+        );
+        return;
+      }
+
+      updateGridCells(proposedCells);
     } else {
       // Rule 2: Moving an existing placed cell to a new target slot -> STRICTLY 1 PERIOD MOVE
-      const updated = workingCells.map((c) =>
+      const proposedCells = workingCells.map((c) =>
         c.id === sourceCellId
           ? {
               ...c,
@@ -318,7 +336,25 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
             }
           : c
       );
-      updateGridCells(updated);
+
+      const validation = validateConsecutiveSubjectLimit(
+        proposedCells,
+        subjects,
+        assignment.classId,
+        targetDay,
+        targetShift
+      );
+
+      if (!validation.valid) {
+        const sub = subjects.find((s) => s.id === assignment.subjectId);
+        const subName = sub?.name || 'môn học';
+        alert(
+          `Không thể xếp tiết này.\nMôn ${subName} chỉ được xếp liên tiếp tối đa 2 tiết trong cùng một buổi.`
+        );
+        return;
+      }
+
+      updateGridCells(proposedCells);
     }
   };
 

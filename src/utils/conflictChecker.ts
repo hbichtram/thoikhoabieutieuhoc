@@ -17,6 +17,91 @@ import {
   getTeacherMaxSessionsPerWeek,
 } from './teacherUtils';
 
+export interface ConsecutiveValidationResult {
+  valid: boolean;
+  reason?: string;
+  violatingCellIds?: string[];
+  subjectId?: string;
+  classId?: string;
+  day?: DayOfWeek;
+  shift?: PeriodShift;
+}
+
+/**
+ * Validates that no subject has more than 2 CONSECUTIVE periods in the same shift and same day for any class.
+ */
+export function validateConsecutiveSubjectLimit(
+  proposedCells: ScheduleCell[],
+  subjects?: Subject[],
+  targetClassId?: string,
+  targetDay?: DayOfWeek,
+  targetShift?: PeriodShift
+): ConsecutiveValidationResult {
+  const subjectMap = subjects ? new Map(subjects.map((s) => [s.id, s])) : new Map();
+
+  // Filter cells to inspect if target filter provided
+  const cellsToInspect = proposedCells.filter((c) => {
+    if (targetClassId && c.classId !== targetClassId) return false;
+    if (targetDay && c.day !== targetDay) return false;
+    if (targetShift && c.shift !== targetShift) return false;
+    return true;
+  });
+
+  // Group cells by classId_day_shift
+  const groups = new Map<string, ScheduleCell[]>();
+  cellsToInspect.forEach((c) => {
+    const key = `${c.classId}_${c.day}_${c.shift}`;
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)!.push(c);
+  });
+
+  for (const [key, cellGroup] of groups.entries()) {
+    const [classId, day, shift] = key.split('_') as [string, DayOfWeek, PeriodShift];
+
+    // Map by normalized period number (1..4 for morning, 1..3 for afternoon)
+    const periodMap = new Map<number, ScheduleCell>();
+    cellGroup.forEach((c) => {
+      const pNum = c.periodNumber > 4 ? c.periodNumber - 4 : c.periodNumber;
+      periodMap.set(pNum, c);
+    });
+
+    const maxPeriod = shift === 'morning' ? 4 : 3;
+
+    // Check for 3 consecutive periods of the same subjectId
+    for (let p = 1; p <= maxPeriod - 2; p++) {
+      const cell1 = periodMap.get(p);
+      const cell2 = periodMap.get(p + 1);
+      const cell3 = periodMap.get(p + 2);
+
+      if (
+        cell1 &&
+        cell2 &&
+        cell3 &&
+        cell1.subjectId &&
+        cell1.subjectId === cell2.subjectId &&
+        cell1.subjectId === cell3.subjectId
+      ) {
+        const subName = subjectMap.get(cell1.subjectId)?.name || 'môn học';
+        const reason = `Không thể xếp: một môn học chỉ được xếp liên tiếp tối da 2 tiết trong cùng một buổi. (Môn ${subName})`;
+
+        return {
+          valid: false,
+          reason,
+          violatingCellIds: [cell1.id, cell2.id, cell3.id],
+          subjectId: cell1.subjectId,
+          classId,
+          day: day as DayOfWeek,
+          shift: shift as PeriodShift,
+        };
+      }
+    }
+  }
+
+  return { valid: true };
+}
+
 export interface ScheduleStats {
   totalTeachers: number;
   totalClasses: number;
@@ -333,6 +418,52 @@ export function checkFullSchedule(
     }
   });
 
+  // Check I: Critical Consecutive Subject Limit (>2 consecutive periods of same subject in a shift)
+  const consecutiveCheck = validateConsecutiveSubjectLimit(cells, subjects);
+  if (!consecutiveCheck.valid) {
+    // Scan all groups to generate specific critical issue entries
+    const groups = new Map<string, ScheduleCell[]>();
+    cells.forEach((c) => {
+      const key = `${c.classId}_${c.day}_${c.shift}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(c);
+    });
+
+    groups.forEach((cellGroup, key) => {
+      const [classId, day, shift] = key.split('_') as [string, DayOfWeek, PeriodShift];
+      const cls = classMap.get(classId);
+
+      const periodMap = new Map<number, ScheduleCell>();
+      cellGroup.forEach((c) => {
+        const pNum = c.periodNumber > 4 ? c.periodNumber - 4 : c.periodNumber;
+        periodMap.set(pNum, c);
+      });
+
+      const maxPeriod = shift === 'morning' ? 4 : 3;
+      for (let p = 1; p <= maxPeriod - 2; p++) {
+        const c1 = periodMap.get(p);
+        const c2 = periodMap.get(p + 1);
+        const c3 = periodMap.get(p + 2);
+
+        if (c1 && c2 && c3 && c1.subjectId && c1.subjectId === c2.subjectId && c1.subjectId === c3.subjectId) {
+          const sub = subjectMap.get(c1.subjectId);
+          issues.push({
+            id: `consec_sub_${key}_${p}`,
+            type: 'subject_clustering',
+            severity: 'critical',
+            message: `🔴 Lớp ${cls?.name || ''} bị xếp 3 tiết liên tiếp môn ${sub?.name || ''} vào ${day} - Buổi ${
+              shift === 'morning' ? 'Sáng' : 'Chiều'
+            } (Tiết ${p}–${p + 2}). Quy định: tối đa 2 tiết liên tiếp trong cùng một buổi.`,
+            classId,
+            subjectId: c1.subjectId,
+            day,
+            shift,
+          });
+        }
+      }
+    });
+  }
+
   const criticalErrorCount = issues.filter((i) => i.severity === 'critical').length;
   const warningCount = issues.filter((i) => i.severity === 'warning').length;
 
@@ -440,6 +571,37 @@ export function getSlotSuggestions(
             periodNumber: p,
             isValid: false,
             reason: `${teacher.name} đã đủ ${maxSessions} buổi/tuần (xếp thêm sẽ tạo thành buổi thứ ${currentTeacherSessions.size + 1})`,
+          });
+          continue;
+        }
+
+        // Check Hard Constraint: Max 2 consecutive periods for same subject in same shift & day
+        const testCell: ScheduleCell = {
+          id: 'test_sugg',
+          classId: assignment.classId,
+          day,
+          shift,
+          periodNumber: p,
+          assignmentId: assignment.id,
+          subjectId: assignment.subjectId,
+          teacherId: assignment.teacherId,
+          isLocked: false,
+        };
+        const consecVal = validateConsecutiveSubjectLimit(
+          [...cells, testCell],
+          subjects,
+          assignment.classId,
+          day,
+          shift
+        );
+        if (!consecVal.valid) {
+          const sub = subjects.find((s) => s.id === assignment.subjectId);
+          suggestions.push({
+            day,
+            shift,
+            periodNumber: p,
+            isValid: false,
+            reason: `Môn ${sub?.name || ''} chỉ được xếp liên tiếp tối đa 2 tiết trong một buổi`,
           });
           continue;
         }

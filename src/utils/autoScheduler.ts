@@ -15,6 +15,7 @@ import {
   getTeacherGapPeriods,
   getTeacherMaxSessionsPerWeek,
 } from './teacherUtils';
+import { validateConsecutiveSubjectLimit } from './conflictChecker';
 
 export interface UnplacedAssignmentReport {
   assignment: Assignment;
@@ -167,6 +168,30 @@ export function runAutoScheduler(
             const isExistingSession = currentTeacherSessions.has(`${day}_${shift}`);
             if (!isExistingSession && currentTeacherSessions.size >= maxSessions) {
               // Exceeding maxSessionsPerWeek is STRICTLY FORBIDDEN!
+              continue;
+            }
+
+            // Check 6: Max 2 consecutive periods for same subject in same shift & day (HARD CONSTRAINT)
+            const candidateTestCell: ScheduleCell = {
+              id: 'temp_auto_test',
+              classId: assignment.classId,
+              day,
+              shift,
+              periodNumber: p,
+              assignmentId: assignment.id,
+              subjectId: assignment.subjectId,
+              teacherId: assignment.teacherId,
+              isLocked: false,
+            };
+            const consecVal = validateConsecutiveSubjectLimit(
+              [...workingCells, candidateTestCell],
+              subjects,
+              assignment.classId,
+              day,
+              shift
+            );
+            if (!consecVal.valid) {
+              // Creating >2 consecutive periods of same subject is STRICTLY FORBIDDEN!
               continue;
             }
 
