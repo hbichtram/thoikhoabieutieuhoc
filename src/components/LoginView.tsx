@@ -55,7 +55,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 </span>
               </div>
               <span className="text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
-                100% Đúng chuẩn Bộ GD&ĐT
+               
               </span>
             </div>
 
@@ -100,7 +100,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         {/* Footer Note */}
         <div className="relative z-10 text-xs text-slate-500 font-medium flex items-center justify-between border-t border-slate-800/80 pt-4">
           <span>© 2026 Thời Khóa Biểu Tiểu Học · Tác giả: Hồng Bích Trâm</span>
-          <span>Phần mềm Thời khóa biểu Tiểu học</span>
+          <span></span>
         </div>
       </div>
 
