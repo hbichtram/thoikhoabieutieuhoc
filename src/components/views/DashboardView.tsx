@@ -140,14 +140,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div>
             <div className="flex items-center gap-2.5">
               <h1 className="text-base font-bold text-slate-900 tracking-tight leading-none">
-                Tổng quan TKB SMART
+                Tổng quan THỜI KHÓA BIỂU TIỂU HỌC
               </h1>
               <span className="inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200/80">
                 Năm học 2026–2027 · Học kỳ I
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1 font-medium">
-              Hệ thống trợ lý quản lý phân công & thiết kế thời khóa biểu tiểu học
+              Trợ lý thiết kế và xếp thời khóa biểu
             </p>
           </div>
         </div>
@@ -409,7 +409,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 ? `${totalItemsToProcess} mục cần xử lý (${actualConflicts} xung đột, ${unassignedPeriods} chưa xếp)`
                 : 'Thời khóa biểu hợp lệ, không có xung đột'}
             </span>
-            <span className="text-slate-400 font-semibold">TKB SMART Auto-Audit</span>
+            <span className="text-slate-400 font-semibold">TKB TIỂU HỌC Auto-Audit</span>
           </div>
         </div>
       </div>

@@ -164,7 +164,7 @@ export const ImportTeachersModal: React.FC<ImportTeachersModalProps> = ({
               <span>NHẬP GIÁO VIÊN TỪ FILE EXCEL</span>
             </h3>
             <p className="text-slate-500 text-xs mt-0.5">
-              Nhập danh sách giáo viên hàng loạt vào hệ thống TKB SMART nhanh chóng và chính xác.
+              Nhập danh sách giáo viên hàng loạt vào hệ thống Thời Khóa Biểu Tiểu Học nhanh chóng và chính xác.
             </p>
           </div>
           <button

@@ -1,6 +1,6 @@
 {
-  "name": "TKB SMART",
-  "description": "Trợ lý thiết kế thời khóa biểu trường tiểu học - Quản lý giáo viên, lớp, môn học, phân công và xếp thời khóa biểu",
+  "name": "THỜI KHÓA BIỂU TIỂU HỌC",
+  "description": "Trợ lý thiết kế và xếp thời khóa biểu - Tác giả: Hồng Bích Trâm",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

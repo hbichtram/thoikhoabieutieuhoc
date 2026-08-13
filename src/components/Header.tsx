@@ -63,12 +63,12 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="font-extrabold text-lg tracking-tight text-white">TKB SMART</h1>
+              <h1 className="font-extrabold text-lg tracking-tight text-white">THỜI KHÓA BIỂU TIỂU HỌC</h1>
               <span className="text-xs bg-blue-500/20 text-blue-300 font-medium px-2 py-0.5 rounded border border-blue-400/30">
                 v1.0
               </span>
             </div>
-            <p className="text-xs text-slate-400">Trợ lý thiết kế thời khóa biểu trường tiểu học</p>
+            <p className="text-xs text-slate-400">Trợ lý thiết kế và xếp thời khóa biểu</p>
           </div>
         </div>
 

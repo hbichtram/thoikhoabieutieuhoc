@@ -101,8 +101,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer Info */}
       <div className="p-4 border-t border-slate-800 text-xs text-slate-500 bg-slate-950/40">
-        <div className="font-medium text-slate-400">TKB SMART v1.0</div>
-        <div className="mt-0.5 text-[11px] text-slate-500">Trợ lý Hiệu phó Chuyên môn</div>
+        <div className="font-medium text-slate-400">THỜI KHÓA BIỂU TIỂU HỌC v1.0</div>
+        <div className="mt-0.5 text-[11px] text-slate-500">Tác giả: Hồng Bích Trâm</div>
       </div>
     </aside>
   );

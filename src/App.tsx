@@ -1,5 +1,5 @@
 /**
- * TKB SMART - Trợ lý thiết kế thời khóa biểu trường tiểu học
+ * THỜI KHÓA BIỂU TIỂU HỌC - Trợ lý thiết kế và xếp thời khóa biểu
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -14,6 +14,8 @@ import { TimetableDesignView } from './components/views/TimetableDesignView';
 import { ConflictCheckView } from './components/views/ConflictCheckView';
 import { ReportsView } from './components/views/ReportsView';
 import { SettingsView } from './components/views/SettingsView';
+import { LoginView } from './components/LoginView';
+import { Calendar, RefreshCw } from 'lucide-react';
 
 import {
   Teacher,
@@ -503,6 +505,33 @@ export default function App() {
     loadedUidRef.current = null;
     isSeedingRef.current = false;
   };
+
+  // 1. Loading screen while initializing auth
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 space-y-4 font-sans">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-extrabold text-2xl shadow-xl shadow-blue-500/25 animate-pulse">
+          <Calendar className="w-7 h-7" />
+        </div>
+        <div className="flex items-center gap-3 text-slate-300 font-semibold text-sm bg-slate-900/80 px-4 py-2.5 rounded-full border border-slate-800">
+          <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
+          <span>Đang xác thực tài khoản...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Show Login Screen if user is not authenticated
+  if (!user) {
+    return (
+      <LoginView
+        onLoginGoogle={handleGoogleLogin}
+        isLoggingIn={isLoggingIn}
+        loginError={loginError}
+        authReady={authReady}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-900 antialiased selection:bg-blue-500 selection:text-white">

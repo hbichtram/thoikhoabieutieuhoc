@@ -126,8 +126,8 @@ const PrintableScheduleCard: React.FC<{
       <div className="grid grid-cols-3 items-center border-b-2 border-slate-900 pb-3 mb-2 text-slate-900">
         {/* Left */}
         <div className="text-left">
-          <div className="font-black text-sm uppercase tracking-wider text-slate-900">TKB SMART</div>
-          <div className="text-[11px] text-slate-600 font-medium">Trợ lý thiết kế thời khóa biểu trường tiểu học</div>
+          <div className="font-black text-sm uppercase tracking-wider text-slate-900">THỜI KHÓA BIỂU TIỂU HỌC</div>
+          <div className="text-[11px] text-slate-600 font-medium">Trợ lý thiết kế và xếp thời khóa biểu</div>
         </div>
 
         {/* Center */}
@@ -267,7 +267,7 @@ const PrintableScheduleCard: React.FC<{
       {/* FOOTER */}
       <div className="flex items-center justify-between border-t border-slate-300 pt-1.5 text-[10px] text-slate-500 font-medium">
         <span>In lúc: {formattedPrintTime}</span>
-        <span>TKB SMART v1.0 | Trang 1/1</span>
+        <span>THỜI KHÓA BIỂU TIỂU HỌC v1.0 | Trang 1/1</span>
       </div>
     </div>
   );
@@ -396,7 +396,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `TKB_SMART_BAOCAO_${Date.now()}.csv`);
+    link.setAttribute('download', `THOI_KHOA_BIEU_TIEU_HOC_BAOCAO_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
