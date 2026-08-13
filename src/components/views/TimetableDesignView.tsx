@@ -272,6 +272,24 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
   const currentClass = classes.find((c) => c.id === selectedClassId);
   const currentTeacher = teachers.find((t) => t.id === selectedTeacherId);
 
+  // Determine GVCN vs GVBM status
+  const isClassView = viewMode === 'class';
+
+  // In Class view, find the homeroom teacher of this class
+  const classHomeroomTeacher = isClassView && currentClass
+    ? teachers.find((t) => t.id === currentClass.homeroomTeacherId || t.homeroomClassId === currentClass.id)
+    : null;
+
+  // In Teacher view, check if selected teacher is a GVCN
+  const isHomeroomTeacher = !isClassView && currentTeacher && (
+    currentTeacher.type === 'homeroom' ||
+    Boolean(classes.find((c) => c.homeroomTeacherId === currentTeacher.id || c.id === currentTeacher.homeroomClassId))
+  );
+
+  const teacherHomeroomClass = isHomeroomTeacher && currentTeacher
+    ? classes.find((c) => c.homeroomTeacherId === currentTeacher.id || c.id === currentTeacher.homeroomClassId)
+    : null;
+
   // Relevant assignments for current entity
   const currentEntityAssignments = assignments.filter((a) => {
     if (viewMode === 'class') return a.classId === selectedClassId;
@@ -787,7 +805,11 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                           style={{ backgroundColor: item.subject?.color || '#3B82F6' }}
                         />
                         <span className="font-bold text-xs text-slate-900 truncate">
-                          {item.subject?.name || 'Môn học'}
+                          {isClassView
+                            ? item.subject?.name || 'Môn học'
+                            : isHomeroomTeacher
+                            ? `${item.subject?.name || 'Môn học'}${item.cls ? ` (${item.cls.name})` : ''}`
+                            : `${item.cls ? `Lớp ${item.cls.name} – ` : ''}${item.subject?.name || 'Môn học'}`}
                         </span>
                       </div>
 
@@ -806,6 +828,8 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                       <span className="truncate max-w-[130px]">
                         {viewMode === 'class'
                           ? item.teacher?.name || 'Chưa gán GV'
+                          : isHomeroomTeacher
+                          ? (item.cls?.id === teacherHomeroomClass?.id ? 'Lớp chủ nhiệm' : `Lớp ${item.cls?.name || '?'}`)
                           : `Lớp ${item.cls?.name || '?'}`}
                       </span>
                       <span className="text-slate-400 font-normal">
@@ -838,6 +862,38 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
 
         {/* RIGHT COLUMN: BẢNG THỜI KHÓA BIỂU (~75% WIDTH) */}
         <div className="flex-1 min-w-0 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col overflow-hidden h-full">
+          {/* Header Banner distinguishing GVCN vs GVBM */}
+          <div className="bg-slate-900 text-white px-3.5 py-2 border-b border-slate-800 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+              <span className="font-extrabold text-xs md:text-sm tracking-wide uppercase">
+                {isClassView
+                  ? `THỜI KHÓA BIỂU – LỚP ${currentClass?.name || ''}`
+                  : teacherHomeroomClass
+                  ? `THỜI KHÓA BIỂU – LỚP ${teacherHomeroomClass.name}`
+                  : `THỜI KHÓA BIỂU – GIÁO VIÊN: ${currentTeacher?.name || ''}`}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              {isClassView && (
+                <span className="bg-slate-800 text-slate-200 border border-slate-700 px-2.5 py-0.5 rounded-md font-semibold">
+                  GVCN: <b className="text-amber-300">{classHomeroomTeacher ? classHomeroomTeacher.name : 'Chưa phân công'}</b>
+                </span>
+              )}
+              {!isClassView && isHomeroomTeacher && (
+                <span className="bg-slate-800 text-slate-200 border border-slate-700 px-2.5 py-0.5 rounded-md font-semibold">
+                  GVCN: <b className="text-amber-300">{currentTeacher?.name}</b> ({teacherHomeroomClass ? `Lớp ${teacherHomeroomClass.name}` : 'Chưa gán lớp'})
+                </span>
+              )}
+              {!isClassView && !isHomeroomTeacher && currentTeacher && (
+                <span className="bg-slate-800 text-slate-200 border border-slate-700 px-2.5 py-0.5 rounded-md font-semibold text-slate-300">
+                  Giáo viên bộ môn ({currentTeacher.code})
+                </span>
+              )}
+            </div>
+          </div>
+
           {/* Table Container - Scrollable Internally */}
           <div className="flex-1 overflow-auto">
             <table className="w-full border-collapse text-left min-w-[700px]">
@@ -980,6 +1036,7 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                               ) : cellInSlot ? (
                                 <div
                                   draggable={!cellInSlot.isLocked}
+                                  title={`Môn: ${subject?.name || 'Môn học'}\nLớp: Lớp ${cls?.name || currentClass?.name || '?'}\nGiáo viên: ${teacher?.name || currentTeacher?.name || 'Chưa gán'}\nBuổi: ${row.isMorning ? 'Sáng' : 'Chiều'}\nTiết: ${pNum}`}
                                   onDragStart={(e) => {
                                     e.stopPropagation();
                                     e.dataTransfer.setData('text/plain', cellInSlot.assignmentId);
@@ -1010,8 +1067,10 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
                                       {subject?.name || 'Môn học'}
                                     </div>
                                     <div className="text-[10px] text-slate-500 font-medium truncate">
-                                      {viewMode === 'class'
+                                      {isClassView
                                         ? teacher?.name || 'Chưa gán GV'
+                                        : isHomeroomTeacher
+                                        ? (teacherHomeroomClass && cls?.id === teacherHomeroomClass.id ? 'Lớp chủ nhiệm' : `Lớp ${cls?.name || '?'}`)
                                         : `Lớp ${cls?.name || '?'}`}
                                     </div>
                                   </div>

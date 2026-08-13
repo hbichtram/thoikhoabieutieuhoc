@@ -18,7 +18,7 @@ import {
   getTeacherSessions,
   getTeacherMaxSessionsPerWeek,
 } from './teacherUtils';
-import { normalizeScheduleCells, isCellForAssignment, countPlacedPeriodsForAssignment } from './timetableUtils';
+import { normalizeScheduleCells, deduplicateScheduleCells, getTeacherConsecutiveWarnings, isCellForAssignment, countPlacedPeriodsForAssignment } from './timetableUtils';
 
 export interface SubjectShiftValidationResult {
   valid: boolean;
@@ -283,7 +283,7 @@ export function checkFullSchedule(
   timeConfig: TimeConfig,
   rawCells: ScheduleCell[]
 ): ScheduleStats {
-  const cells = normalizeScheduleCells(rawCells || [], assignments);
+  const cells = deduplicateScheduleCells(rawCells || [], assignments);
   const conflicts: ConflictIssue[] = [];
   const missingPeriods: MissingPeriodItem[] = [];
   const warnings: ConflictIssue[] = [];
@@ -529,35 +529,9 @@ export function checkFullSchedule(
     }
   });
 
-  // Check G: Consecutive Periods (>3 continuous periods) (Warning)
-  teacherShiftSlots.forEach((periods, key) => {
-    const [teacherId, day, shift] = key.split('_');
-    const sorted = [...periods].sort((a, b) => a - b);
-    let streak = 1;
-    let maxStreak = 1;
-    for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i] === sorted[i - 1] + 1) {
-        streak++;
-        maxStreak = Math.max(maxStreak, streak);
-      } else if (sorted[i] !== sorted[i - 1]) {
-        streak = 1;
-      }
-    }
-    if (maxStreak >= 4) {
-      const tch = teacherMap.get(teacherId);
-      warnings.push({
-        id: `consec_${key}`,
-        type: 'consecutive_periods',
-        severity: 'warning',
-        message: `${tch?.name || 'Giáo viên'} có ${maxStreak} tiết dạy liên tiếp vào ${day} (${
-          shift === 'morning' ? 'Sáng' : 'Chiều'
-        }).`,
-        teacherId,
-        day: day as DayOfWeek,
-        shift: shift as PeriodShift,
-      });
-    }
-  });
+  // Check G: Consecutive Periods (Warning if streak >= 4 in morning; Afternoon max is 3 -> 100% valid)
+  const consecWarnings = getTeacherConsecutiveWarnings(cells, teachers, assignments);
+  warnings.push(...consecWarnings);
 
   // Check H: Subject Clustering (>2 periods of same subject in a day for a class) (Warning)
   classDailySubjectCount.forEach((count, key) => {
