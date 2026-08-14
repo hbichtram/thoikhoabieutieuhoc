@@ -42,11 +42,24 @@ service cloud.firestore {
       // System Admin has full permissions (create, read, update, delete)
       allow read, create, update, delete: if isSystemAdmin();
 
-      // Regular user can read their own profile
-      allow read: if isAuthenticated() && request.auth.uid == userId;
+      // Regular user can get their own profile by UID or by pre-registered email
+      allow get: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        ('email' in resource.data && 'email' in request.auth.token && resource.data.email.lower() == request.auth.token.email.lower())
+      );
 
-      // Regular user can create their own initial profile
+      // Regular user can list/query matching their own token email
+      allow list: if isAuthenticated() && (
+        'email' in resource.data && 'email' in request.auth.token && resource.data.email.lower() == request.auth.token.email.lower()
+      );
+
+      // Regular user can create their own profile document with their UID
       allow create: if isAuthenticated() && request.auth.uid == userId;
+
+      // Regular user can delete the temporary pre-registered doc matching their email
+      allow delete: if isAuthenticated() && (
+        'email' in resource.data && 'email' in request.auth.token && resource.data.email.lower() == request.auth.token.email.lower()
+      );
 
       // Regular user can update their own non-sensitive profile fields
       allow update: if isAuthenticated() && request.auth.uid == userId &&

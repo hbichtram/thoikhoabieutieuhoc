@@ -18,6 +18,8 @@ import { SettingsView } from './components/views/SettingsView';
 import { LoginView } from './components/LoginView';
 import { PendingApprovalView } from './components/views/PendingApprovalView';
 import { DisabledAccountView } from './components/views/DisabledAccountView';
+import { UnauthorizedAccountView } from './components/views/UnauthorizedAccountView';
+import { UnassignedSchoolView } from './components/views/UnassignedSchoolView';
 import { UserManagementView } from './components/views/UserManagementView';
 import { SchoolManagementView } from './components/views/SchoolManagementView';
 import { Calendar, RefreshCw } from 'lucide-react';
@@ -719,23 +721,44 @@ export default function App() {
     );
   }
 
-  // 3. User is Pending Approval
-  if (userProfile && userProfile.status === 'pending') {
+  // 3. User is not registered / authorized by Admin
+  if (!userProfile) {
     return (
-      <PendingApprovalView
-        userProfile={userProfile}
+      <UnauthorizedAccountView
+        user={user}
         onLogout={handleLogout}
-        onRefresh={refreshProfile}
       />
     );
   }
 
   // 4. User is Disabled
-  if (userProfile && userProfile.status === 'disabled') {
+  if (userProfile.status === 'disabled') {
     return (
       <DisabledAccountView
         userProfile={userProfile}
         onLogout={handleLogout}
+      />
+    );
+  }
+
+  // 5. Manager is active but not assigned to any school yet
+  if (userProfile.role === 'manager' && !userProfile.schoolId) {
+    return (
+      <UnassignedSchoolView
+        userProfile={userProfile}
+        onRefresh={refreshProfile}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // 6. Legacy pending fallback
+  if (userProfile.status === 'pending') {
+    return (
+      <PendingApprovalView
+        userProfile={userProfile}
+        onLogout={handleLogout}
+        onRefresh={refreshProfile}
       />
     );
   }

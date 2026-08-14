@@ -65,7 +65,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   const [newEmail, setNewEmail] = useState<string>('');
   const [newName, setNewName] = useState<string>('');
   const [newRole, setNewRole] = useState<UserRole>('manager');
-  const [newStatus, setNewStatus] = useState<UserStatus>('active');
   const [newSchoolId, setNewSchoolId] = useState<string>('');
 
   // Delete Confirm Modal
@@ -139,7 +138,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
       const success = await updateUserProfileByAdmin(editingUser.uid, updates);
       if (success) {
-        showToast('success', `Đã cập nhật thông tin cán bộ ${editingUser.displayName || editingUser.email}`);
+        showToast('success', `✓ Đã cập nhật thông tin cán bộ ${editingUser.displayName || editingUser.email}`);
         setEditingUser(null);
         await loadData();
         onRefreshCurrentProfile();
@@ -162,7 +161,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
     setIsProcessing(true);
     try {
-      // If activating a pending user without school, assign first school
+      // If activating a user without school, assign first school
       let assignedSchoolId = user.schoolId;
       let assignedSchoolName = user.schoolName;
       if (targetStatus === 'active' && !assignedSchoolId && schools.length > 0) {
@@ -177,8 +176,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       });
 
       if (success) {
-        const actionLabel = targetStatus === 'active' ? 'kích hoạt' : targetStatus === 'disabled' ? 'khóa' : 'chuyển sang chờ duyệt';
-        showToast('success', `Đã ${actionLabel} tài khoản ${user.displayName || user.email}`);
+        const actionLabel = targetStatus === 'active' ? 'kích hoạt' : 'khóa';
+        showToast('success', `✓ Đã ${actionLabel} tài khoản ${user.displayName || user.email}`);
         await loadData();
       } else {
         showToast('error', 'Cập nhật trạng thái thất bại.');
@@ -204,7 +203,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     try {
       const success = await deleteUserProfileByAdmin(deleteTargetUser.uid);
       if (success) {
-        showToast('success', `Đã xóa tài khoản ${deleteTargetUser.displayName || deleteTargetUser.email}`);
+        showToast('success', `✓ Đã xóa tài khoản ${deleteTargetUser.displayName || deleteTargetUser.email}`);
         setDeleteTargetUser(null);
         await loadData();
       } else {
@@ -217,7 +216,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     }
   };
 
-  // Add Pre-registered User
+  // Add Pre-registered User (Always Active immediately)
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = newEmail.trim().toLowerCase();
@@ -244,13 +243,14 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       const generatedUid = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const now = new Date().toISOString();
 
+      // ALWAYS status: 'active'
       const newProfile: UserProfile = {
         uid: generatedUid,
         email: cleanEmail,
         displayName: newName.trim() || cleanEmail.split('@')[0],
         photoURL: null,
         role: newRole,
-        status: newStatus,
+        status: 'active',
         schoolId: newRole === 'admin' ? (assignedSchoolId || null) : assignedSchoolId,
         schoolName: selectedSchool ? selectedSchool.name : (assignedSchoolId || null),
         createdAt: now,
@@ -259,7 +259,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
       const success = await createUserProfileByAdmin(newProfile);
       if (success) {
-        showToast('success', `Đã thêm tài khoản cán bộ: ${newProfile.displayName}`);
+        const targetSchoolLabel = selectedSchool ? selectedSchool.name : 'toàn hệ thống';
+        showToast('success', `✓ Tạo tài khoản thành công! Cán bộ đã được cấp quyền truy cập ${targetSchoolLabel} (🟢 Đang hoạt động).`);
         setIsAddModalOpen(false);
         setNewEmail('');
         setNewName('');
@@ -720,7 +721,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
               {/* Status Selection */}
               <div className="space-y-1.5">
                 <label className="font-bold text-slate-700">Trạng thái (Status):</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setEditStatus('active')}
@@ -731,17 +732,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                     }`}
                   >
                     🟢 Hoạt động
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditStatus('pending')}
-                    className={`py-2 px-2 rounded-xl border text-center font-bold transition-all cursor-pointer ${
-                      editStatus === 'pending'
-                        ? 'bg-amber-50 border-amber-500 text-amber-700 ring-2 ring-amber-500/20'
-                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    🟡 Chờ duyệt
                   </button>
                   <button
                     type="button"
@@ -873,29 +863,26 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Vai trò:</label>
-                  <select
-                    value={newRole}
-                    onChange={(e) => setNewRole(e.target.value as UserRole)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold bg-slate-50 text-slate-800 focus:outline-hidden"
-                  >
-                    <option value="manager">Cán bộ Quản lý</option>
-                    <option value="admin">Admin Hệ thống</option>
-                  </select>
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700">Vai trò phân quyền:</label>
+                <select
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value as UserRole)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 font-bold bg-slate-50 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                >
+                  <option value="manager">👤 Cán bộ Quản lý</option>
+                  <option value="admin">🛡️ Admin Hệ thống</option>
+                </select>
+              </div>
+
+              <div className="bg-emerald-50 border border-emerald-200/80 rounded-xl p-3 text-xs text-emerald-800 space-y-1">
+                <div className="font-bold flex items-center gap-1.5 text-emerald-900">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Trạng thái: 🟢 Hoạt động ngay (Active)</span>
                 </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Trạng thái:</label>
-                  <select
-                    value={newStatus}
-                    onChange={(e) => setNewStatus(e.target.value as UserStatus)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold bg-slate-50 text-slate-800 focus:outline-hidden"
-                  >
-                    <option value="active">🟢 Hoạt động ngay</option>
-                    <option value="pending">🟡 Chờ duyệt</option>
-                  </select>
-                </div>
+                <p className="text-[11px] text-emerald-700">
+                  Sau khi Admin tạo, cán bộ đăng nhập bằng Google sẽ vào thẳng Dashboard trường học mà không cần chờ duyệt.
+                </p>
               </div>
             </div>
 
@@ -913,7 +900,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md flex items-center gap-2 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                <span>{isProcessing ? 'Đang thêm...' : 'Tạo tài khoản'}</span>
+                <span>{isProcessing ? 'Đang tạo...' : 'Tạo tài khoản'}</span>
               </button>
             </div>
           </form>

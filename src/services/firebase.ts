@@ -485,9 +485,11 @@ export const DEFAULT_INITIAL_SCHOOLS: School[] = [
 ];
 
 /**
- * Sync or create user profile in Firestore: users/{uid}
+ * Sync or retrieve user profile in Firestore: users/{uid}
+ * Returns UserProfile if user is authorized (Admin or pre-registered by Admin),
+ * or null if user email has not been pre-registered by Admin.
  */
-export async function syncUserProfile(user: User): Promise<UserProfile> {
+export async function syncUserProfile(user: User): Promise<UserProfile | null> {
   console.log(`[AUTH READY]\nuid: ${user.uid}\nemail: ${user.email || 'none'}`);
 
   const userDocRef = doc(db, "users", user.uid);
@@ -521,8 +523,28 @@ export async function syncUserProfile(user: User): Promise<UserProfile> {
       console.log(`[AUTHORIZATION]\nisAdmin: ${data.role === 'admin'}\nisManager: ${isManager}\nisApproved: ${isApproved}`);
       return data;
     } else {
-      // Check if user was pre-registered by Admin using email
+      // If user is System Admin, automatically initialize their Admin doc
+      if (isAdmin) {
+        const adminProfile: UserProfile = {
+          uid: user.uid,
+          displayName: user.displayName || user.email?.split('@')[0] || "Admin Hệ Thống",
+          email: user.email || null,
+          photoURL: user.photoURL || null,
+          role: "admin",
+          status: "active",
+          schoolId: null,
+          schoolName: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await setDoc(userDocRef, adminProfile);
+        return adminProfile;
+      }
+
+      // Check if user was pre-registered by Admin using their Google email
       let preRegistered: UserProfile | null = null;
+      let tempDocId: string | null = null;
+
       if (user.email) {
         try {
           const q = query(
@@ -533,39 +555,48 @@ export async function syncUserProfile(user: User): Promise<UserProfile> {
           if (!querySnap.empty) {
             const foundDoc = querySnap.docs[0];
             preRegistered = foundDoc.data() as UserProfile;
-            // Clean up temporary pre-registered doc if UID differed
-            if (foundDoc.id !== user.uid) {
-              try {
-                await deleteDoc(doc(db, "users", foundDoc.id));
-              } catch (_) {}
-            }
+            tempDocId = foundDoc.id;
           }
         } catch (queryErr) {
           console.warn("[USER PROFILE] Could not query pre-registered users:", queryErr);
         }
       }
 
-      // Create initial profile
-      const newProfile: UserProfile = {
-        uid: user.uid,
-        displayName: user.displayName || preRegistered?.displayName || user.email?.split('@')[0] || "Người dùng",
-        email: user.email || null,
-        photoURL: user.photoURL || null,
-        role: isAdmin ? "admin" : (preRegistered?.role || "manager"),
-        status: isAdmin ? "active" : (preRegistered?.status || "pending"),
-        schoolId: isAdmin ? (preRegistered?.schoolId || null) : (preRegistered?.schoolId || null),
-        schoolName: preRegistered?.schoolName || null,
-        createdAt: preRegistered?.createdAt || now,
-        updatedAt: now,
-      };
+      // If user was pre-registered by Admin:
+      if (preRegistered) {
+        const newProfile: UserProfile = {
+          uid: user.uid,
+          displayName: user.displayName || preRegistered.displayName || user.email?.split('@')[0] || "Cán bộ quản lý",
+          email: user.email || preRegistered.email || null,
+          photoURL: user.photoURL || preRegistered.photoURL || null,
+          role: preRegistered.role || "manager",
+          status: preRegistered.status || "active", // Immediately active
+          schoolId: preRegistered.schoolId || null,
+          schoolName: preRegistered.schoolName || null,
+          createdAt: preRegistered.createdAt || now,
+          updatedAt: now,
+        };
 
-      await setDoc(userDocRef, newProfile);
-      
-      const isManager = newProfile.role === "manager";
-      const isApproved = newProfile.status === "active";
-      console.log(`[USER PROFILE]\nuid: ${newProfile.uid}\nrole: ${newProfile.role}\nschoolId: ${newProfile.schoolId || 'none'}\nstatus: ${newProfile.status}`);
-      console.log(`[AUTHORIZATION]\nisAdmin: ${newProfile.role === 'admin'}\nisManager: ${isManager}\nisApproved: ${isApproved}`);
-      return newProfile;
+        // Write to users/{uid}
+        await setDoc(userDocRef, newProfile);
+
+        // Clean up temporary pre-registered doc if UID differed
+        if (tempDocId && tempDocId !== user.uid) {
+          try {
+            await deleteDoc(doc(db, "users", tempDocId));
+          } catch (delErr) {
+            console.warn("[USER PROFILE] Could not delete temp pre-registered doc:", delErr);
+          }
+        }
+
+        console.log(`[USER PROFILE]\nuid: ${newProfile.uid}\nrole: ${newProfile.role}\nschoolId: ${newProfile.schoolId || 'none'}\nstatus: ${newProfile.status}`);
+        return newProfile;
+      }
+
+      // If NOT pre-registered and NOT admin:
+      // STRICT REQUIREMENT: DO NOT CREATE ANY DOCUMENT IN FIRESTORE!
+      console.warn(`[USER PROFILE] Unauthorized login attempt for unregistered email: ${user.email}`);
+      return null;
     }
   } catch (error: any) {
     console.error("[USER PROFILE] Error syncing profile:", {
@@ -577,19 +608,21 @@ export async function syncUserProfile(user: User): Promise<UserProfile> {
       currentUserEmail: user.email,
     });
     
-    // In-memory fallback
-    const fallbackProfile: UserProfile = {
-      uid: user.uid,
-      displayName: user.displayName || user.email?.split('@')[0] || "Người dùng",
-      email: user.email || null,
-      photoURL: user.photoURL || null,
-      role: isAdmin ? "admin" : "manager",
-      status: isAdmin ? "active" : "pending",
-      schoolId: null,
-      createdAt: now,
-      updatedAt: now,
-    };
-    return fallbackProfile;
+    // In case of error, if system admin fallback to in-memory admin, else null
+    if (isAdmin) {
+      return {
+        uid: user.uid,
+        displayName: user.displayName || "Admin",
+        email: user.email || null,
+        photoURL: user.photoURL || null,
+        role: "admin",
+        status: "active",
+        schoolId: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
+    return null;
   }
 }
 
