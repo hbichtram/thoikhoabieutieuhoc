@@ -916,6 +916,10 @@ export default function App() {
                 handleSwitchSchool(schoolId);
                 setActiveTab('overview');
               }}
+              onSchoolsChanged={async () => {
+                const updatedSchools = await getAllSchools();
+                setSchools(updatedSchools);
+              }}
             />
           )}
         </main>

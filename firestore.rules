@@ -8,16 +8,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-
     function isSystemAdmin() {
       return isAuthenticated() && (
+        (request.auth.token.email != null && request.auth.token.email.lower() == 'tram.ai.ctst@gmail.com') ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active') ||
-        (request.auth.token.email == 'tram.ai.ctst@gmail.com')
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active')
       );
     }
 
@@ -36,16 +32,25 @@ service cloud.firestore {
     // 1. User Profiles Collection: users/{userId}
     match /users/{userId} {
       // User can read their own profile, Admin can read all user profiles
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isSystemAdmin());
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        (resource.data.email != null && request.auth.token.email != null && resource.data.email.lower() == request.auth.token.email.lower()) ||
+        isSystemAdmin()
+      );
       
-      // User can create their initial profile (defaulting to manager/pending, or admin for owner email)
-      allow create: if isAuthenticated() && request.auth.uid == userId && (
-        (request.resource.data.role == 'manager' && request.resource.data.status == 'pending') ||
-        (request.auth.token.email == 'tram.ai.ctst@gmail.com' && request.resource.data.role == 'admin')
+      // Admin can create any user profile (e.g. pre-registering managers with assigned school).
+      // Regular user can create their own initial profile.
+      allow create: if isAuthenticated() && (
+        isSystemAdmin() || (
+          request.auth.uid == userId && (
+            (request.resource.data.role == 'manager' && request.resource.data.status == 'pending') ||
+            (request.auth.token.email != null && request.auth.token.email.lower() == 'tram.ai.ctst@gmail.com' && request.resource.data.role == 'admin')
+          )
+        )
       );
 
-      // User can only update their own non-permission fields (displayName, photoURL, updatedAt)
-      // Only Admin can update role, status, schoolId
+      // Admin can update any profile (role, status, schoolId).
+      // Regular user can only update their own non-permission fields (displayName, photoURL, updatedAt).
       allow update: if isAuthenticated() && (
         isSystemAdmin() || (
           request.auth.uid == userId &&
@@ -61,23 +66,26 @@ service cloud.firestore {
 
     // 2. Schools Collection: schools/{schoolId}
     match /schools/{schoolId} {
-      // Admin can manage all schools. Manager can read their own school info.
+      // Admin can manage all schools. Active Manager of this school can read/create/update/delete their own school
       allow read: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
-      allow write: if isSystemAdmin();
+      allow create, update, delete: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
 
       // Timetable data subcollection: schools/{schoolId}/timetable_data/{docId}
       match /timetable_data/{docId} {
-        allow read, write: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
+        allow read: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
+        allow create, update, delete: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
       }
 
       // Versions subcollection: schools/{schoolId}/versions/{versionId}
       match /versions/{versionId} {
-        allow read, write: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
+        allow read: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
+        allow create, update, delete: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
       }
 
       // Any other subcollections under school
       match /{allSubcollections=**} {
-        allow read, write: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
+        allow read: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
+        allow create, update, delete: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
       }
     }
 

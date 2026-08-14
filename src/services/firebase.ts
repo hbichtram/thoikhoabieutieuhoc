@@ -573,6 +573,36 @@ export async function getAllUserProfiles(): Promise<UserProfile[]> {
 }
 
 /**
+ * Create user profile by Admin (Admin only)
+ */
+export async function createUserProfileByAdmin(
+  profile: UserProfile
+): Promise<boolean> {
+  try {
+    const userDocRef = doc(db, "users", profile.uid);
+    const now = new Date().toISOString();
+    const data: UserProfile = {
+      ...profile,
+      createdAt: profile.createdAt || now,
+      updatedAt: now,
+    };
+    await setDoc(userDocRef, data, { merge: true });
+    console.log(`[USER PROFILE] Successfully created user profile ${profile.uid}:`, data);
+    return true;
+  } catch (error: any) {
+    console.error(`[USER PROFILE] Error creating user profile:`, {
+      operation: "setDoc",
+      path: `users/${profile.uid}`,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      currentUserUid: auth.currentUser?.uid,
+      currentUserEmail: auth.currentUser?.email,
+    });
+    return false;
+  }
+}
+
+/**
  * Update user profile by Admin (Admin only)
  */
 export async function updateUserProfileByAdmin(
@@ -585,11 +615,18 @@ export async function updateUserProfileByAdmin(
       ...updates,
       updatedAt: new Date().toISOString(),
     };
-    await updateDoc(userDocRef, updateData);
+    await setDoc(userDocRef, updateData, { merge: true });
     console.log(`[USER PROFILE] Successfully updated user ${uid}:`, updateData);
     return true;
-  } catch (error) {
-    console.error(`[USER PROFILE] Error updating user ${uid}:`, error);
+  } catch (error: any) {
+    console.error(`[USER PROFILE] Error updating user ${uid}:`, {
+      operation: "setDoc",
+      path: `users/${uid}`,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      currentUserUid: auth.currentUser?.uid,
+      currentUserEmail: auth.currentUser?.email,
+    });
     return false;
   }
 }
@@ -603,8 +640,15 @@ export async function deleteUserProfileByAdmin(uid: string): Promise<boolean> {
     await deleteDoc(userDocRef);
     console.log(`[USER PROFILE] Successfully deleted user profile ${uid}`);
     return true;
-  } catch (error) {
-    console.error(`[USER PROFILE] Error deleting user profile ${uid}:`, error);
+  } catch (error: any) {
+    console.error(`[USER PROFILE] Error deleting user profile ${uid}:`, {
+      operation: "deleteDoc",
+      path: `users/${uid}`,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      currentUserUid: auth.currentUser?.uid,
+      currentUserEmail: auth.currentUser?.email,
+    });
     return false;
   }
 }
@@ -624,8 +668,15 @@ export async function getAllSchools(): Promise<School[]> {
       list.push(d.data() as School);
     });
     return list;
-  } catch (error) {
-    console.error("[SCHOOLS] Error fetching schools:", error);
+  } catch (error: any) {
+    console.error("[SCHOOLS] Error fetching schools:", {
+      operation: "getDocs",
+      path: "schools",
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      currentUserUid: auth.currentUser?.uid,
+      currentUserEmail: auth.currentUser?.email,
+    });
     return [];
   }
 }
@@ -642,8 +693,15 @@ export async function getSchool(schoolId: string): Promise<School | null> {
       return snap.data() as School;
     }
     return null;
-  } catch (error) {
-    console.error(`[SCHOOLS] Error fetching school ${schoolId}:`, error);
+  } catch (error: any) {
+    console.error(`[SCHOOLS] Error fetching school ${schoolId}:`, {
+      operation: "getDoc",
+      path: `schools/${schoolId.trim()}`,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      currentUserUid: auth.currentUser?.uid,
+      currentUserEmail: auth.currentUser?.email,
+    });
     return null;
   }
 }
@@ -659,9 +717,17 @@ export async function saveSchool(school: School): Promise<boolean> {
       updatedAt: new Date().toISOString(),
     };
     await setDoc(schoolDocRef, data, { merge: true });
+    console.log(`[SCHOOLS] Successfully saved school ${school.id}`);
     return true;
-  } catch (error) {
-    console.error(`[SCHOOLS] Error saving school ${school.id}:`, error);
+  } catch (error: any) {
+    console.error(`[SCHOOLS] Error saving school ${school.id}:`, {
+      operation: "setDoc",
+      path: `schools/${school.id}`,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      currentUserUid: auth.currentUser?.uid,
+      currentUserEmail: auth.currentUser?.email,
+    });
     return false;
   }
 }
@@ -673,9 +739,17 @@ export async function deleteSchool(schoolId: string): Promise<boolean> {
   try {
     const schoolDocRef = doc(db, "schools", schoolId);
     await deleteDoc(schoolDocRef);
+    console.log(`[SCHOOLS] Successfully deleted school ${schoolId}`);
     return true;
-  } catch (error) {
-    console.error(`[SCHOOLS] Error deleting school ${schoolId}:`, error);
+  } catch (error: any) {
+    console.error(`[SCHOOLS] Error deleting school ${schoolId}:`, {
+      operation: "deleteDoc",
+      path: `schools/${schoolId}`,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      currentUserUid: auth.currentUser?.uid,
+      currentUserEmail: auth.currentUser?.email,
+    });
     return false;
   }
 }

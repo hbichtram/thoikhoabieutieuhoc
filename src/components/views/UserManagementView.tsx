@@ -27,6 +27,7 @@ import {
 import { UserProfile, School, UserRole, UserStatus } from '../../types';
 import {
   getAllUserProfiles,
+  createUserProfileByAdmin,
   updateUserProfileByAdmin,
   deleteUserProfileByAdmin,
   getAllSchools,
@@ -219,43 +220,55 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   // Add Pre-registered User
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEmail || !newEmail.includes('@')) {
+    const cleanEmail = newEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
       setModalError('Vui lòng nhập email hợp lệ.');
+      return;
+    }
+
+    if (users.some((u) => u.email?.toLowerCase() === cleanEmail)) {
+      setModalError(`Email "${cleanEmail}" đã tồn tại trong danh sách tài khoản.`);
+      return;
+    }
+
+    const assignedSchoolId = newSchoolId || (schools.length > 0 ? schools[0].id : '');
+    if (newRole === 'manager' && !assignedSchoolId) {
+      setModalError('Vui lòng tạo ít nhất 1 Trường học trước khi thêm Cán bộ Quản lý.');
       return;
     }
 
     setIsProcessing(true);
     setModalError(null);
     try {
-      const selectedSchool = schools.find((s) => s.id === newSchoolId);
+      const selectedSchool = schools.find((s) => s.id === assignedSchoolId);
       const generatedUid = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const now = new Date().toISOString();
 
       const newProfile: UserProfile = {
         uid: generatedUid,
-        email: newEmail.trim(),
-        displayName: newName.trim() || newEmail.split('@')[0],
+        email: cleanEmail,
+        displayName: newName.trim() || cleanEmail.split('@')[0],
         photoURL: null,
         role: newRole,
         status: newStatus,
-        schoolId: newRole === 'admin' ? (newSchoolId || null) : (newSchoolId || schools[0]?.id || null),
-        schoolName: selectedSchool ? selectedSchool.name : null,
+        schoolId: newRole === 'admin' ? (assignedSchoolId || null) : assignedSchoolId,
+        schoolName: selectedSchool ? selectedSchool.name : (assignedSchoolId || null),
         createdAt: now,
         updatedAt: now,
       };
 
-      const success = await updateUserProfileByAdmin(generatedUid, newProfile);
+      const success = await createUserProfileByAdmin(newProfile);
       if (success) {
-        showToast('success', `Đã thêm tài khoản cán bộ ${newProfile.displayName}`);
+        showToast('success', `Đã thêm tài khoản cán bộ: ${newProfile.displayName}`);
         setIsAddModalOpen(false);
         setNewEmail('');
         setNewName('');
         await loadData();
       } else {
-        setModalError('Lỗi khi thêm tài khoản vào Firestore.');
+        setModalError('Lỗi khi thêm tài khoản vào Firestore. Vui lòng kiểm tra quyền Admin.');
       }
     } catch (error: any) {
-      setModalError(error.message || 'Lỗi khi tạo tài khoản.');
+      setModalError(error?.message || 'Lỗi khi tạo tài khoản.');
     } finally {
       setIsProcessing(false);
     }

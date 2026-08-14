@@ -1,0 +1,83 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account profile with role, status, and school assignment",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "manager"] },
+        "status": { "type": "string", "enum": ["active", "pending", "disabled"] },
+        "schoolId": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "role", "status"]
+    },
+    "School": {
+      "title": "School",
+      "description": "School entity managed by system admins and school managers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "address": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "TimetableData": {
+      "title": "TimetableData",
+      "description": "Full school timetable grid, teachers, subjects, and assignments",
+      "type": "object",
+      "properties": {
+        "cells": { "type": "object" },
+        "teachers": { "type": "array" },
+        "grades": { "type": "array" },
+        "timeConfig": { "type": "object" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["cells", "teachers", "updatedAt"]
+    },
+    "TimetableVersion": {
+      "title": "TimetableVersion",
+      "description": "Historical snapshot of a school timetable",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "data": { "type": "object" }
+      },
+      "required": ["id", "name", "createdAt", "schoolId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Collection of user profiles"
+    },
+    "/schools/{schoolId}": {
+      "schema": "School",
+      "description": "Collection of schools"
+    },
+    "/schools/{schoolId}/timetable_data/{docId}": {
+      "schema": "TimetableData",
+      "description": "Timetable data for a specific school"
+    },
+    "/schools/{schoolId}/versions/{versionId}": {
+      "schema": "TimetableVersion",
+      "description": "Timetable version history for a school"
+    }
+  }
+}

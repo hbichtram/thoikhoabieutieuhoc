@@ -28,11 +28,13 @@ import {
 interface SchoolManagementViewProps {
   currentSchoolId: string;
   onSelectActiveSchool: (schoolId: string) => void;
+  onSchoolsChanged?: () => void;
 }
 
 export const SchoolManagementView: React.FC<SchoolManagementViewProps> = ({
   currentSchoolId,
   onSelectActiveSchool,
+  onSchoolsChanged,
 }) => {
   const [schools, setSchools] = useState<School[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -136,8 +138,9 @@ export const SchoolManagementView: React.FC<SchoolManagementViewProps> = ({
         showToast('success', `Đã lưu trường: ${schoolData.name}`);
         setIsModalOpen(false);
         await loadData();
+        onSchoolsChanged?.();
       } else {
-        setModalError('Không thể lưu trường vào cơ sở dữ liệu.');
+        setModalError('Không thể lưu trường vào cơ sở dữ liệu. Vui lòng kiểm tra quyền Admin.');
       }
     } catch (error: any) {
       setModalError(error.message || 'Đã xảy ra lỗi.');
@@ -156,8 +159,9 @@ export const SchoolManagementView: React.FC<SchoolManagementViewProps> = ({
         showToast('success', `Đã xóa trường ${deleteTargetSchool.name}`);
         setDeleteTargetSchool(null);
         await loadData();
+        onSchoolsChanged?.();
       } else {
-        showToast('error', 'Không thể xóa trường.');
+        showToast('error', 'Không thể xóa trường. Vui lòng kiểm tra quyền Admin.');
       }
     } catch (error) {
       showToast('error', 'Lỗi khi xóa trường.');
