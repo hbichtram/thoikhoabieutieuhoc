@@ -763,29 +763,59 @@ export async function getSchool(schoolId: string): Promise<School | null> {
   }
 }
 
+export interface SaveSchoolResult {
+  success: boolean;
+  error?: string;
+  errorCode?: string;
+  path?: string;
+}
+
 /**
  * Save or update a School entity
  */
-export async function saveSchool(school: School): Promise<boolean> {
+export async function saveSchool(school: School): Promise<SaveSchoolResult> {
   const currentUser = auth.currentUser;
   const isAdmin = isSystemAdminUser(currentUser);
-  const data = {
-    ...school,
+  const cleanId = String(school.id || "").trim();
+  const path = `schools/${cleanId}`;
+
+  const cleanSchoolData: School = {
+    id: cleanId,
+    name: String(school.name || "").trim(),
+    code: String(school.code || cleanId).trim().toUpperCase(),
+    address: school.address ? String(school.address).trim() : "",
+    createdAt: school.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
 
-  console.log(`[SCHOOL CREATE REQUEST]\nuid: ${currentUser?.uid || 'none'}\nemail: ${currentUser?.email || 'none'}\nisAdmin: ${isAdmin}\nschoolId: ${school.id}\ndata:`, data);
+  console.log(`[SCHOOL CREATE AUTH]\nuid: ${currentUser?.uid || "none"}\nemail: ${currentUser?.email || "none"}\nisAdmin: ${isAdmin}\nrole: ${isAdmin ? "admin" : "manager"}\nschoolId: ${cleanId}`);
+  console.log(`[SCHOOL CREATE PATH]\n${path}`);
+  console.log("[SCHOOL CREATE DATA]", cleanSchoolData);
 
   try {
-    const schoolDocRef = doc(db, "schools", school.id);
-    await setDoc(schoolDocRef, data, { merge: true });
-    console.log(`[SCHOOL CREATE]\nsuccess: Successfully saved school ${school.id}`);
-    console.log(`[FIRESTORE RESULT]\noperation: create\npath: schools/${school.id}\nuid: ${currentUser?.uid}\nrole: ${isAdmin ? 'admin' : 'manager'}\nschoolId: ${school.id}\nstatus: success`);
-    return true;
+    const schoolDocRef = doc(db, "schools", cleanId);
+    await setDoc(schoolDocRef, cleanSchoolData, { merge: true });
+    
+    console.log(`[SCHOOL CREATE]\nsuccess: true`);
+    console.log(`[FIRESTORE RESULT]\noperation: create\nsuccess: true\npath: ${path}\nuid: ${currentUser?.uid}\nrole: ${isAdmin ? "admin" : "manager"}\nschoolId: ${cleanId}\nstatus: success`);
+    return { success: true, path };
   } catch (error: any) {
-    console.error(`[SCHOOL CREATE]\nerror: Failed to save school ${school.id}`);
-    console.error(`[FIRESTORE RESULT]\noperation: create\npath: schools/${school.id}\nuid: ${currentUser?.uid}\nrole: ${isAdmin ? 'admin' : 'manager'}\nschoolId: ${school.id}\nerrorCode: ${error?.code}\nerrorMessage: ${error?.message}`);
-    return false;
+    console.error("[SCHOOL CREATE FAILED]", {
+      uid: currentUser?.uid,
+      email: currentUser?.email,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      errorName: error?.name,
+      path,
+      error,
+    });
+    console.error(`[FIRESTORE RESULT]\noperation: create\npath: ${path}\nuid: ${currentUser?.uid}\nrole: ${isAdmin ? "admin" : "manager"}\nschoolId: ${cleanId}\nerrorCode: ${error?.code}\nerrorMessage: ${error?.message}`);
+    return {
+      success: false,
+      error: error?.message || "Lỗi Firestore khi tạo trường",
+      errorCode: error?.code || "unknown_error",
+      path,
+    };
   }
 }
 

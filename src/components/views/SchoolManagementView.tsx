@@ -133,17 +133,21 @@ export const SchoolManagementView: React.FC<SchoolManagementViewProps> = ({
         updatedAt: now,
       };
 
-      const success = await saveSchool(schoolData);
-      if (success) {
+      const result = await saveSchool(schoolData);
+      if (result.success) {
         showToast('success', `Đã lưu trường: ${schoolData.name}`);
         setIsModalOpen(false);
         await loadData();
         onSchoolsChanged?.();
       } else {
-        setModalError('Không thể lưu trường vào cơ sở dữ liệu. Vui lòng kiểm tra quyền Admin.');
+        setModalError(
+          `[DEBUG SCHOOL CREATE]\nerrorCode: ${result.errorCode || 'unknown'}\nerrorMessage: ${result.error || 'Lỗi không xác định'}\npath: ${result.path || `schools/${schoolData.id}`}`
+        );
       }
     } catch (error: any) {
-      setModalError(error.message || 'Đã xảy ra lỗi.');
+      setModalError(
+        `[DEBUG SCHOOL CREATE]\nerrorCode: ${error?.code || 'client_exception'}\nerrorMessage: ${error?.message || 'Đã xảy ra lỗi khi tạo trường.'}\npath: schools/${cleanId}`
+      );
     } finally {
       setIsProcessing(false);
     }
