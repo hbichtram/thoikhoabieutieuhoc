@@ -92,9 +92,12 @@ export function deduplicateScheduleCells(cells: ScheduleCell[], assignments?: As
 
 /**
  * Calculates consecutive period warnings for teachers.
- * Morning: max periods is 4 (Tiết 1..4). If teacher teaches all 4 periods continuously -> Warn!
- * Afternoon: max periods is 3 (Tiết 1..3). Dạy cả 3 tiết chiều = HỢP LỆ (0 warning).
- * Only warns if streak >= 4.
+ * Primary school rules:
+ * - Morning: 4 periods (1, 2, 3, 4). Teaching 1..4 is valid standard load (0 warnings).
+ * - Afternoon: 3 periods (1, 2, 3). Teaching 1..3 is valid standard load (0 warnings).
+ * - Morning and Afternoon are separate sessions with a lunch break; never count across sessions.
+ * - If streak in a single morning session exceeds 4 (abnormal), a warning is generated.
+ * - Afternoon period > 3 is handled as a critical invalid slot error in checkFullSchedule.
  */
 export function getTeacherConsecutiveWarnings(
   cells: ScheduleCell[],
@@ -105,19 +108,31 @@ export function getTeacherConsecutiveWarnings(
   const teacherMap = new Map(teachers.map((t) => [t.id, t]));
   const warnings: ConflictIssue[] = [];
 
-  // Group unique period numbers by teacherId_day_shift
-  const teacherShiftSlots = new Map<string, Set<number>>();
+  interface TeacherShiftGroup {
+    teacherId: string;
+    day: DayOfWeek;
+    shift: PeriodShift;
+    periodNumbers: Set<number>;
+  }
+
+  // Safe structured map grouping - avoids split('_') bugs on IDs containing underscores
+  const groupMap = new Map<string, TeacherShiftGroup>();
 
   cleanCells.forEach((c) => {
-    if (!c.teacherId) return;
-    const key = `${c.teacherId}_${c.day}_${c.shift}`;
-    if (!teacherShiftSlots.has(key)) {
-      teacherShiftSlots.set(key, new Set<number>());
+    if (!c.teacherId || !c.day || !c.shift) return;
+    const safeKey = `${c.teacherId}:::${c.day}:::${c.shift}`;
+    if (!groupMap.has(safeKey)) {
+      groupMap.set(safeKey, {
+        teacherId: c.teacherId,
+        day: c.day,
+        shift: c.shift,
+        periodNumbers: new Set<number>(),
+      });
     }
-    teacherShiftSlots.get(key)!.add(c.periodNumber);
+    groupMap.get(safeKey)!.periodNumbers.add(Number(c.periodNumber));
   });
 
-  const dayLabels: Record<string, string> = {
+  const dayLabels: Record<DayOfWeek, string> = {
     T2: 'Thứ 2',
     T3: 'Thứ 3',
     T4: 'Thứ 4',
@@ -125,10 +140,10 @@ export function getTeacherConsecutiveWarnings(
     T6: 'Thứ 6',
   };
 
-  teacherShiftSlots.forEach((periodSet, key) => {
-    const [teacherId, day, shift] = key.split('_') as [string, DayOfWeek, PeriodShift];
-    const sorted = Array.from(periodSet).sort((a, b) => a - b);
-    let streak = 1;
+  groupMap.forEach((group) => {
+    const { teacherId, day, shift, periodNumbers } = group;
+    const sorted = Array.from(periodNumbers).sort((a, b) => a - b);
+    let streak = sorted.length > 0 ? 1 : 0;
     let maxStreak = sorted.length > 0 ? 1 : 0;
 
     for (let i = 1; i < sorted.length; i++) {
@@ -140,18 +155,17 @@ export function getTeacherConsecutiveWarnings(
       }
     }
 
-    // Morning has 4 periods. Streak >= 4 means 4 continuous morning periods -> Warning.
-    // Afternoon has 3 periods (1, 2, 3). Max streak in afternoon is 3 -> 100% VALID.
-    // Streak >= 4 will NEVER trigger for afternoon 3 periods.
-    if (maxStreak >= 4) {
+    // Morning max standard is 4, Afternoon max standard is 3.
+    // In Vietnamese primary schools: 4 morning periods or 3 afternoon periods is normal (0 warnings).
+    // Only warn if streak > 4 in morning. (Afternoon > 3 is flagged as critical error by checkFullSchedule).
+    if (shift === 'morning' && maxStreak > 4) {
       const tch = teacherMap.get(teacherId);
-      const shiftLabel = shift === 'morning' ? 'Sáng' : 'Chiều';
       const dayText = dayLabels[day] || day;
       warnings.push({
-        id: `consec_${key}`,
+        id: `consec_${teacherId}_${day}_${shift}`,
         type: 'consecutive_periods',
         severity: 'warning',
-        message: `${tch?.name || 'Giáo viên'} có ${maxStreak} tiết dạy liên tiếp vào ${dayText} (${shiftLabel}).`,
+        message: `${tch?.name || 'Giáo viên'} có ${maxStreak} tiết dạy liên tiếp vào ${dayText} (Buổi Sáng).`,
         teacherId,
         day,
         shift,
