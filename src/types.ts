@@ -151,6 +151,17 @@ export interface ScheduleStats {
 export type UserRole = 'admin' | 'manager';
 export type UserStatus = 'pending' | 'active' | 'disabled';
 
+export interface AuthorizedUser {
+  email: string;
+  displayName: string;
+  role: UserRole;
+  status: UserStatus;
+  schoolId: string | null;
+  schoolName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface UserSummary {
   uid: string;
   displayName: string | null;

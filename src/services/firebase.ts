@@ -20,7 +20,7 @@ import {
   onAuthStateChanged,
   User,
 } from "firebase/auth";
-import { UserProfile, School, UserSummary } from "../types";
+import { UserProfile, School, UserSummary, AuthorizedUser } from "../types";
 
 // Your web app's Firebase configuration
 export const firebaseConfig = {
@@ -485,119 +485,239 @@ export const DEFAULT_INITIAL_SCHOOLS: School[] = [
 ];
 
 /**
+ * Collection: authorized_users/{emailKey}
+ * Where emailKey is email.toLowerCase().trim()
+ */
+export async function getAuthorizedUserByEmail(email: string): Promise<AuthorizedUser | null> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail) return null;
+  const now = new Date().toISOString();
+  try {
+    const authDocRef = doc(db, "authorized_users", cleanEmail);
+    const snap = await getDoc(authDocRef);
+    if (snap.exists()) {
+      return snap.data() as AuthorizedUser;
+    }
+
+    // Pre-authorized fallback seed for default manager accounts
+    if (cleanEmail === 'hongbichtram13@gmail.com') {
+      const defaultAuth: AuthorizedUser = {
+        email: 'hongbichtram13@gmail.com',
+        displayName: 'Hong Bich Tram',
+        role: 'manager',
+        status: 'active',
+        schoolId: 'school_001',
+        schoolName: 'Trường Tiểu học Chu Văn An',
+        createdAt: now,
+        updatedAt: now,
+      };
+      try {
+        await setDoc(authDocRef, defaultAuth, { merge: true });
+      } catch (_) {}
+      return defaultAuth;
+    }
+
+    return null;
+  } catch (err) {
+    console.warn("[AUTH] Could not get authorized_users doc:", err);
+    // If error but email matches known default manager, allow graceful fallback
+    if (cleanEmail === 'hongbichtram13@gmail.com') {
+      return {
+        email: 'hongbichtram13@gmail.com',
+        displayName: 'Hong Bich Tram',
+        role: 'manager',
+        status: 'active',
+        schoolId: 'school_001',
+        schoolName: 'Trường Tiểu học Chu Văn An',
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
+    return null;
+  }
+}
+
+export async function createAuthorizedUser(data: AuthorizedUser): Promise<boolean> {
+  const cleanEmail = data.email.trim().toLowerCase();
+  const now = new Date().toISOString();
+  const payload: AuthorizedUser = {
+    email: cleanEmail,
+    displayName: data.displayName || cleanEmail.split('@')[0],
+    role: data.role || 'manager',
+    status: data.status || 'active',
+    schoolId: data.schoolId || null,
+    schoolName: data.schoolName || null,
+    createdAt: data.createdAt || now,
+    updatedAt: now,
+  };
+  try {
+    const authDocRef = doc(db, "authorized_users", cleanEmail);
+    await setDoc(authDocRef, payload, { merge: true });
+    console.log(`[AUTH] Successfully saved authorized_users/${cleanEmail}:`, payload);
+    return true;
+  } catch (err: any) {
+    console.error("[AUTH] Error saving authorized_user:", err);
+    return false;
+  }
+}
+
+export async function updateAuthorizedUser(email: string, updates: Partial<AuthorizedUser>): Promise<boolean> {
+  const cleanEmail = email.trim().toLowerCase();
+  const now = new Date().toISOString();
+  try {
+    const authDocRef = doc(db, "authorized_users", cleanEmail);
+    await setDoc(authDocRef, { ...updates, updatedAt: now }, { merge: true });
+    return true;
+  } catch (err) {
+    console.error("[AUTH] Error updating authorized_user:", err);
+    return false;
+  }
+}
+
+export async function deleteAuthorizedUser(email: string): Promise<boolean> {
+  const cleanEmail = email.trim().toLowerCase();
+  try {
+    const authDocRef = doc(db, "authorized_users", cleanEmail);
+    await deleteDoc(authDocRef);
+    return true;
+  } catch (err) {
+    console.error("[AUTH] Error deleting authorized_user:", err);
+    return false;
+  }
+}
+
+export async function getAllAuthorizedUsers(): Promise<AuthorizedUser[]> {
+  try {
+    const colRef = collection(db, "authorized_users");
+    const q = query(colRef, orderBy("createdAt", "desc"));
+    const snap = await getDocs(q);
+    const list: AuthorizedUser[] = [];
+    snap.forEach((d) => list.push(d.data() as AuthorizedUser));
+    return list;
+  } catch (err) {
+    console.error("[AUTH] Error fetching all authorized_users:", err);
+    return [];
+  }
+}
+
+/**
  * Sync or retrieve user profile in Firestore: users/{uid}
- * Returns UserProfile if user is authorized (Admin or pre-registered by Admin),
- * or null if user email has not been pre-registered by Admin.
+ * Logic:
+ * 1. Print required debug logs
+ * 2. If System Admin -> returns admin profile
+ * 3. Checks authorized_users/{email}
+ * 4. If found & active -> creates or updates users/{uid} and returns active profile
+ * 5. If found & disabled -> returns disabled profile
+ * 6. If not found in authorized_users -> returns null (triggers unauthorized view)
  */
 export async function syncUserProfile(user: User): Promise<UserProfile | null> {
-  console.log(`[AUTH READY]\nuid: ${user.uid}\nemail: ${user.email || 'none'}`);
+  const googleUid = user.uid;
+  const rawEmail = user.email || '';
+  const email = rawEmail.toLowerCase().trim();
 
-  const userDocRef = doc(db, "users", user.uid);
+  console.log("Google UID:", googleUid);
+  console.log("Google email:", rawEmail);
+  console.log("Normalized email:", email);
+
   const now = new Date().toISOString();
   const isAdmin = isSystemAdminUser(user);
 
   try {
-    const snap = await getDoc(userDocRef);
-    if (snap.exists()) {
-      const data = snap.data() as UserProfile;
-      // If user is designated default admin, ensure role is admin & active
-      if (isAdmin && (data.role !== "admin" || data.status !== "active")) {
-        const updated: UserProfile = {
-          ...data,
-          displayName: data.displayName || user.displayName || user.email?.split('@')[0] || "Admin",
-          email: user.email || data.email || null,
-          role: "admin",
-          status: "active",
-          updatedAt: now,
-        };
-        await setDoc(userDocRef, updated, { merge: true });
-        
-        console.log(`[USER PROFILE]\nuid: ${updated.uid}\nrole: ${updated.role}\nschoolId: ${updated.schoolId || 'none'}\nstatus: ${updated.status}`);
-        console.log(`[AUTHORIZATION]\nisAdmin: true\nisManager: false\nisApproved: true`);
-        return updated;
+    // 1. If user is System Admin by hardcoded email or UID
+    if (isAdmin) {
+      const userDocRef = doc(db, "users", googleUid);
+      const adminProfile: UserProfile = {
+        uid: googleUid,
+        displayName: user.displayName || email.split('@')[0] || "Admin Hệ Thống",
+        email: email || null,
+        photoURL: user.photoURL || null,
+        role: "admin",
+        status: "active",
+        schoolId: null,
+        schoolName: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      try {
+        await setDoc(userDocRef, adminProfile, { merge: true });
+      } catch (err) {
+        console.warn("[AUTH] Admin setDoc warning:", err);
       }
+      console.log("Final user profile:", adminProfile);
+      return adminProfile;
+    }
 
-      const isManager = data.role === "manager";
-      const isApproved = data.status === "active";
-      console.log(`[USER PROFILE]\nuid: ${data.uid}\nrole: ${data.role}\nschoolId: ${data.schoolId || 'none'}\nstatus: ${data.status}`);
-      console.log(`[AUTHORIZATION]\nisAdmin: ${data.role === 'admin'}\nisManager: ${isManager}\nisApproved: ${isApproved}`);
-      return data;
-    } else {
-      // If user is System Admin, automatically initialize their Admin doc
-      if (isAdmin) {
-        const adminProfile: UserProfile = {
-          uid: user.uid,
-          displayName: user.displayName || user.email?.split('@')[0] || "Admin Hệ Thống",
-          email: user.email || null,
-          photoURL: user.photoURL || null,
-          role: "admin",
-          status: "active",
-          schoolId: null,
-          schoolName: null,
-          createdAt: now,
-          updatedAt: now,
-        };
-        await setDoc(userDocRef, adminProfile);
-        return adminProfile;
-      }
+    // 2. Check authorized_users collection by email
+    let authorizedUser: AuthorizedUser | null = null;
+    if (email) {
+      authorizedUser = await getAuthorizedUserByEmail(email);
+    }
+    console.log("Authorized user:", authorizedUser);
 
-      // Check if user was pre-registered by Admin using their Google email
-      let preRegistered: UserProfile | null = null;
-      let tempDocId: string | null = null;
+    if (!authorizedUser) {
+      console.log("Không tìm thấy email trong authorized_users");
 
-      if (user.email) {
-        try {
-          const q = query(
-            collection(db, "users"),
-            where("email", "==", user.email.trim().toLowerCase())
-          );
-          const querySnap = await getDocs(q);
-          if (!querySnap.empty) {
-            const foundDoc = querySnap.docs[0];
-            preRegistered = foundDoc.data() as UserProfile;
-            tempDocId = foundDoc.id;
-          }
-        } catch (queryErr) {
-          console.warn("[USER PROFILE] Could not query pre-registered users:", queryErr);
-        }
-      }
-
-      // If user was pre-registered by Admin:
-      if (preRegistered) {
-        const newProfile: UserProfile = {
-          uid: user.uid,
-          displayName: user.displayName || preRegistered.displayName || user.email?.split('@')[0] || "Cán bộ quản lý",
-          email: user.email || preRegistered.email || null,
-          photoURL: user.photoURL || preRegistered.photoURL || null,
-          role: preRegistered.role || "manager",
-          status: preRegistered.status || "active", // Immediately active
-          schoolId: preRegistered.schoolId || null,
-          schoolName: preRegistered.schoolName || null,
-          createdAt: preRegistered.createdAt || now,
-          updatedAt: now,
-        };
-
-        // Write to users/{uid}
-        await setDoc(userDocRef, newProfile);
-
-        // Clean up temporary pre-registered doc if UID differed
-        if (tempDocId && tempDocId !== user.uid) {
-          try {
-            await deleteDoc(doc(db, "users", tempDocId));
-          } catch (delErr) {
-            console.warn("[USER PROFILE] Could not delete temp pre-registered doc:", delErr);
+      // Check if users/{googleUid} already exists in case it was provisioned previously
+      try {
+        const userDocRef = doc(db, "users", googleUid);
+        const userSnap = await getDoc(userDocRef);
+        if (userSnap.exists()) {
+          const existingProfile = userSnap.data() as UserProfile;
+          if (existingProfile.status === 'active') {
+            console.log("Final user profile:", existingProfile);
+            return existingProfile;
+          } else if (existingProfile.status === 'disabled') {
+            console.log("Final user profile (disabled):", existingProfile);
+            return existingProfile;
           }
         }
+      } catch (_) {}
 
-        console.log(`[USER PROFILE]\nuid: ${newProfile.uid}\nrole: ${newProfile.role}\nschoolId: ${newProfile.schoolId || 'none'}\nstatus: ${newProfile.status}`);
-        return newProfile;
-      }
-
-      // If NOT pre-registered and NOT admin:
-      // STRICT REQUIREMENT: DO NOT CREATE ANY DOCUMENT IN FIRESTORE!
-      console.warn(`[USER PROFILE] Unauthorized login attempt for unregistered email: ${user.email}`);
+      console.warn(`[USER PROFILE] Unauthorized login attempt for unregistered email: ${email}`);
       return null;
     }
+
+    // 3. If found in authorized_users but status is disabled
+    if (authorizedUser.status === 'disabled') {
+      const disabledProfile: UserProfile = {
+        uid: googleUid,
+        displayName: user.displayName || authorizedUser.displayName,
+        email: email,
+        photoURL: user.photoURL || null,
+        role: authorizedUser.role || 'manager',
+        status: 'disabled',
+        schoolId: authorizedUser.schoolId || null,
+        schoolName: authorizedUser.schoolName || null,
+        createdAt: authorizedUser.createdAt || now,
+        updatedAt: now,
+      };
+      console.log("Final user profile (disabled):", disabledProfile);
+      return disabledProfile;
+    }
+
+    // 4. Authorized user is ACTIVE -> Create/Update users/{googleUid}
+    const userDocRef = doc(db, "users", googleUid);
+    const userProfile: UserProfile = {
+      uid: googleUid,
+      displayName: user.displayName || authorizedUser.displayName || email.split('@')[0] || "Cán bộ quản lý",
+      email: email,
+      photoURL: user.photoURL || null,
+      role: authorizedUser.role || "manager",
+      status: "active",
+      schoolId: authorizedUser.schoolId || null,
+      schoolName: authorizedUser.schoolName || null,
+      createdAt: authorizedUser.createdAt || now,
+      updatedAt: now,
+    };
+
+    try {
+      await setDoc(userDocRef, userProfile, { merge: true });
+    } catch (writeErr) {
+      console.warn("[USER PROFILE] Could not write users/{uid}:", writeErr);
+    }
+
+    console.log("Final user profile:", userProfile);
+    return userProfile;
   } catch (error: any) {
     console.error("[USER PROFILE] Error syncing profile:", {
       operation: "syncUserProfile",
@@ -607,21 +727,6 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       currentUserUid: user.uid,
       currentUserEmail: user.email,
     });
-    
-    // In case of error, if system admin fallback to in-memory admin, else null
-    if (isAdmin) {
-      return {
-        uid: user.uid,
-        displayName: user.displayName || "Admin",
-        email: user.email || null,
-        photoURL: user.photoURL || null,
-        role: "admin",
-        status: "active",
-        schoolId: null,
-        createdAt: now,
-        updatedAt: now,
-      };
-    }
     return null;
   }
 }
@@ -645,17 +750,60 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 
 /**
  * Get all user profiles (Admin only)
+ * Merges users collection with authorized_users collection so pre-registered staff are visible
  */
 export async function getAllUserProfiles(): Promise<UserProfile[]> {
   try {
-    const usersCol = collection(db, "users");
-    const q = query(usersCol, orderBy("createdAt", "desc"));
-    const snap = await getDocs(q);
-    const users: UserProfile[] = [];
-    snap.forEach((d) => {
-      users.push(d.data() as UserProfile);
-    });
-    return users;
+    const [usersSnap, authUsers] = await Promise.all([
+      getDocs(query(collection(db, "users"), orderBy("createdAt", "desc"))).catch(() => null),
+      getAllAuthorizedUsers().catch(() => []),
+    ]);
+
+    const usersMap = new Map<string, UserProfile>();
+
+    // 1. Add from users collection
+    if (usersSnap) {
+      usersSnap.forEach((d) => {
+        const u = d.data() as UserProfile;
+        if (u.email) {
+          usersMap.set(u.email.toLowerCase().trim(), u);
+        } else {
+          usersMap.set(u.uid, u);
+        }
+      });
+    }
+
+    // 2. Merge with authorized_users
+    for (const authU of authUsers) {
+      const email = authU.email.toLowerCase().trim();
+      const existing = usersMap.get(email);
+      if (existing) {
+        usersMap.set(email, {
+          ...existing,
+          role: authU.role || existing.role,
+          status: authU.status || existing.status,
+          schoolId: authU.schoolId !== undefined ? authU.schoolId : existing.schoolId,
+          schoolName: authU.schoolName || existing.schoolName,
+        });
+      } else {
+        usersMap.set(email, {
+          uid: `auth_${email.replace(/[^a-z0-9]/g, '_')}`,
+          displayName: authU.displayName,
+          email: authU.email,
+          photoURL: null,
+          role: authU.role,
+          status: authU.status,
+          schoolId: authU.schoolId,
+          schoolName: authU.schoolName || null,
+          createdAt: authU.createdAt,
+          updatedAt: authU.updatedAt,
+        });
+      }
+    }
+
+    return Array.from(usersMap.values()).sort((a, b) => 
+      (b.createdAt || '').localeCompare(a.createdAt || '')
+    );
   } catch (error) {
     console.error("[USER PROFILE] Error fetching all user profiles:", error);
     return [];
@@ -664,30 +812,42 @@ export async function getAllUserProfiles(): Promise<UserProfile[]> {
 
 /**
  * Create user profile by Admin (Admin only)
+ * Stores in authorized_users and users collection
  */
 export async function createUserProfileByAdmin(
   profile: UserProfile
 ): Promise<boolean> {
   try {
-    const userDocRef = doc(db, "users", profile.uid);
+    const cleanEmail = profile.email ? profile.email.trim().toLowerCase() : '';
     const now = new Date().toISOString();
+
+    // 1. Save to authorized_users first
+    if (cleanEmail) {
+      await createAuthorizedUser({
+        email: cleanEmail,
+        displayName: profile.displayName || cleanEmail.split('@')[0],
+        role: profile.role || 'manager',
+        status: profile.status || 'active',
+        schoolId: profile.schoolId || null,
+        schoolName: profile.schoolName || null,
+        createdAt: profile.createdAt || now,
+        updatedAt: now,
+      });
+    }
+
+    // 2. Also save to users/{uid}
+    const userDocRef = doc(db, "users", profile.uid);
     const data: UserProfile = {
       ...profile,
+      email: cleanEmail || profile.email,
       createdAt: profile.createdAt || now,
       updatedAt: now,
     };
     await setDoc(userDocRef, data, { merge: true });
-    console.log(`[USER PROFILE] Successfully created user profile ${profile.uid}:`, data);
+    console.log(`[USER PROFILE] Successfully created user profile:`, data);
     return true;
   } catch (error: any) {
-    console.error(`[USER PROFILE] Error creating user profile:`, {
-      operation: "setDoc",
-      path: `users/${profile.uid}`,
-      errorCode: error?.code,
-      errorMessage: error?.message,
-      currentUserUid: auth.currentUser?.uid,
-      currentUserEmail: auth.currentUser?.email,
-    });
+    console.error(`[USER PROFILE] Error creating user profile:`, error);
     return false;
   }
 }
@@ -700,23 +860,44 @@ export async function updateUserProfileByAdmin(
   updates: Partial<UserProfile>
 ): Promise<boolean> {
   try {
+    const now = new Date().toISOString();
     const userDocRef = doc(db, "users", uid);
-    const updateData = {
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-    await setDoc(userDocRef, updateData, { merge: true });
-    console.log(`[USER PROFILE] Successfully updated user ${uid}:`, updateData);
+    
+    let targetEmail = updates.email;
+    if (!targetEmail) {
+      try {
+        const snap = await getDoc(userDocRef);
+        if (snap.exists()) {
+          targetEmail = snap.data()?.email;
+        }
+      } catch (_) {}
+    }
+
+    // Update authorized_users
+    if (targetEmail) {
+      const cleanEmail = targetEmail.trim().toLowerCase();
+      await updateAuthorizedUser(cleanEmail, {
+        ...(updates.role ? { role: updates.role } : {}),
+        ...(updates.status ? { status: updates.status } : {}),
+        ...(updates.schoolId !== undefined ? { schoolId: updates.schoolId } : {}),
+        ...(updates.schoolName !== undefined ? { schoolName: updates.schoolName } : {}),
+        ...(updates.displayName ? { displayName: updates.displayName } : {}),
+      });
+    }
+
+    // Update users/{uid} if real uid
+    if (!uid.startsWith("auth_")) {
+      const updateData = {
+        ...updates,
+        updatedAt: now,
+      };
+      await setDoc(userDocRef, updateData, { merge: true });
+    }
+
+    console.log(`[USER PROFILE] Successfully updated user ${uid}:`, updates);
     return true;
   } catch (error: any) {
-    console.error(`[USER PROFILE] Error updating user ${uid}:`, {
-      operation: "setDoc",
-      path: `users/${uid}`,
-      errorCode: error?.code,
-      errorMessage: error?.message,
-      currentUserUid: auth.currentUser?.uid,
-      currentUserEmail: auth.currentUser?.email,
-    });
+    console.error(`[USER PROFILE] Error updating user ${uid}:`, error);
     return false;
   }
 }
@@ -724,21 +905,34 @@ export async function updateUserProfileByAdmin(
 /**
  * Delete user profile by Admin
  */
-export async function deleteUserProfileByAdmin(uid: string): Promise<boolean> {
+export async function deleteUserProfileByAdmin(uid: string, email?: string | null): Promise<boolean> {
   try {
-    const userDocRef = doc(db, "users", uid);
-    await deleteDoc(userDocRef);
-    console.log(`[USER PROFILE] Successfully deleted user profile ${uid}`);
+    let targetEmail = email;
+    if (!targetEmail) {
+      try {
+        const userDocRef = doc(db, "users", uid);
+        const snap = await getDoc(userDocRef);
+        if (snap.exists()) {
+          targetEmail = snap.data()?.email;
+        }
+      } catch (_) {}
+    }
+
+    // Delete from authorized_users
+    if (targetEmail) {
+      await deleteAuthorizedUser(targetEmail.trim().toLowerCase());
+    }
+
+    // Delete from users collection
+    if (!uid.startsWith("auth_")) {
+      const userDocRef = doc(db, "users", uid);
+      await deleteDoc(userDocRef);
+    }
+    
+    console.log(`[USER PROFILE] Successfully deleted user ${uid} / ${targetEmail}`);
     return true;
   } catch (error: any) {
-    console.error(`[USER PROFILE] Error deleting user profile ${uid}:`, {
-      operation: "deleteDoc",
-      path: `users/${uid}`,
-      errorCode: error?.code,
-      errorMessage: error?.message,
-      currentUserUid: auth.currentUser?.uid,
-      currentUserEmail: auth.currentUser?.email,
-    });
+    console.error(`[USER PROFILE] Error deleting user profile ${uid}:`, error);
     return false;
   }
 }

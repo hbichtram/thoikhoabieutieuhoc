@@ -130,6 +130,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     try {
       const selectedSchool = schools.find((s) => s.id === editSchoolId);
       const updates: Partial<UserProfile> = {
+        email: editingUser.email,
+        displayName: editingUser.displayName,
         role: editRole,
         status: editStatus,
         schoolId: editRole === 'admin' ? (editSchoolId || null) : editSchoolId,
@@ -170,6 +172,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       }
 
       const success = await updateUserProfileByAdmin(user.uid, {
+        email: user.email,
+        displayName: user.displayName,
         status: targetStatus,
         schoolId: assignedSchoolId,
         schoolName: assignedSchoolName,
@@ -201,7 +205,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
     setIsProcessing(true);
     try {
-      const success = await deleteUserProfileByAdmin(deleteTargetUser.uid);
+      const success = await deleteUserProfileByAdmin(deleteTargetUser.uid, deleteTargetUser.email);
       if (success) {
         showToast('success', `✓ Đã xóa tài khoản ${deleteTargetUser.displayName || deleteTargetUser.email}`);
         setDeleteTargetUser(null);

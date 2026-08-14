@@ -37,29 +37,31 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.schoolId == schoolId;
     }
 
-    // 1. User Profiles Collection: users/{userId}
+    // 1. Authorized Users Collection: authorized_users/{emailKey}
+    match /authorized_users/{emailKey} {
+      // System Admin has full permissions (create, read, update, delete)
+      allow read, write: if isSystemAdmin();
+
+      // Regular user can ONLY get/read their own pre-authorization document matching their Google Auth token email
+      allow get: if isAuthenticated() && request.auth.token.email != null && (
+        emailKey == request.auth.token.email.lower() ||
+        (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
+      );
+
+      // Deny collection-level listing for regular users (prevents email harvesting)
+      allow list: if isSystemAdmin();
+    }
+
+    // 2. User Profiles Collection: users/{userId}
     match /users/{userId} {
       // System Admin has full permissions (create, read, update, delete)
       allow read, create, update, delete: if isSystemAdmin();
 
-      // Regular user can get their own profile by UID or by pre-registered email
-      allow get: if isAuthenticated() && (
-        request.auth.uid == userId || 
-        ('email' in resource.data && 'email' in request.auth.token && resource.data.email.lower() == request.auth.token.email.lower())
-      );
+      // Regular user can get/read their own user profile by their Google UID
+      allow get, read: if isAuthenticated() && request.auth.uid == userId;
 
-      // Regular user can list/query matching their own token email
-      allow list: if isAuthenticated() && (
-        'email' in resource.data && 'email' in request.auth.token && resource.data.email.lower() == request.auth.token.email.lower()
-      );
-
-      // Regular user can create their own profile document with their UID
+      // Regular user can create their own profile document with their Google UID
       allow create: if isAuthenticated() && request.auth.uid == userId;
-
-      // Regular user can delete the temporary pre-registered doc matching their email
-      allow delete: if isAuthenticated() && (
-        'email' in resource.data && 'email' in request.auth.token && resource.data.email.lower() == request.auth.token.email.lower()
-      );
 
       // Regular user can update their own non-sensitive profile fields
       allow update: if isAuthenticated() && request.auth.uid == userId &&
@@ -68,7 +70,7 @@ service cloud.firestore {
         (!('schoolId' in request.resource.data) || request.resource.data.schoolId == resource.data.schoolId);
     }
 
-    // 2. Schools Collection: schools/{schoolId}
+    // 3. Schools Collection: schools/{schoolId}
     match /schools/{schoolId} {
       // System Admin has full permissions (create, read, update, delete)
       allow read, create, update, delete: if isSystemAdmin();
