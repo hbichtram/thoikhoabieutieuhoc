@@ -610,20 +610,14 @@ export async function deleteUserProfileByAdmin(uid: string): Promise<boolean> {
 }
 
 /**
- * Get all schools from schools collection
+ * Get all schools from schools collection (Admin only)
  */
 export async function getAllSchools(): Promise<School[]> {
   try {
     const schoolsCol = collection(db, "schools");
     const snap = await getDocs(schoolsCol);
     if (snap.empty) {
-      // If no schools found, initialize default schools
-      const schools: School[] = [];
-      for (const s of DEFAULT_INITIAL_SCHOOLS) {
-        await setDoc(doc(db, "schools", s.id), s);
-        schools.push(s);
-      }
-      return schools;
+      return [];
     }
     const list: School[] = [];
     snap.forEach((d) => {
@@ -631,8 +625,8 @@ export async function getAllSchools(): Promise<School[]> {
     });
     return list;
   } catch (error) {
-    console.error("[SCHOOLS] Error fetching schools, falling back to defaults:", error);
-    return DEFAULT_INITIAL_SCHOOLS;
+    console.error("[SCHOOLS] Error fetching schools:", error);
+    return [];
   }
 }
 
@@ -640,8 +634,9 @@ export async function getAllSchools(): Promise<School[]> {
  * Get school by schoolId
  */
 export async function getSchool(schoolId: string): Promise<School | null> {
+  if (!schoolId || !schoolId.trim()) return null;
   try {
-    const schoolDocRef = doc(db, "schools", schoolId);
+    const schoolDocRef = doc(db, "schools", schoolId.trim());
     const snap = await getDoc(schoolDocRef);
     if (snap.exists()) {
       return snap.data() as School;

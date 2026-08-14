@@ -60,6 +60,7 @@ import {
   syncUserProfile,
   getUserProfile,
   getAllSchools,
+  getSchool,
   saveSchoolTimetable,
   loadSchoolTimetable,
   saveSchoolVersion,
@@ -81,7 +82,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [schools, setSchools] = useState<School[]>([]);
-  const [activeSchoolId, setActiveSchoolId] = useState<string>('school_001');
+  const [activeSchoolId, setActiveSchoolId] = useState<string>('');
 
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -121,8 +122,23 @@ export default function App() {
       const profile = await getUserProfile(user.uid);
       if (profile) {
         setUserProfile(profile);
-        if (profile.schoolId) {
+        if (profile.role === 'admin') {
+          const schoolList = await getAllSchools();
+          setSchools(schoolList);
+          if (profile.schoolId) {
+            setActiveSchoolId(profile.schoolId);
+          } else if (schoolList.length > 0) {
+            setActiveSchoolId(schoolList[0].id);
+          }
+        } else if (profile.role === 'manager' && profile.status === 'active' && profile.schoolId) {
           setActiveSchoolId(profile.schoolId);
+          const mySchool = await getSchool(profile.schoolId);
+          if (mySchool) {
+            setSchools([mySchool]);
+          }
+        } else {
+          setActiveSchoolId('');
+          setSchools([]);
         }
       }
     } catch (e) {
@@ -138,18 +154,34 @@ export default function App() {
         try {
           const profile = await syncUserProfile(currentUser);
           setUserProfile(profile);
-          if (profile?.schoolId) {
-            setActiveSchoolId(profile.schoolId);
-          }
 
-          // Fetch schools list
-          const schoolList = await getAllSchools();
-          setSchools(schoolList);
+          if (profile?.role === 'admin') {
+            // Admin can fetch all schools
+            const schoolList = await getAllSchools();
+            setSchools(schoolList);
+            if (profile.schoolId) {
+              setActiveSchoolId(profile.schoolId);
+            } else if (schoolList.length > 0) {
+              setActiveSchoolId(schoolList[0].id);
+            }
+          } else if (profile?.role === 'manager' && profile.status === 'active' && profile.schoolId) {
+            // Manager only fetches their own specific school document
+            setActiveSchoolId(profile.schoolId);
+            const mySchool = await getSchool(profile.schoolId);
+            if (mySchool) {
+              setSchools([mySchool]);
+            }
+          } else {
+            setActiveSchoolId('');
+            setSchools([]);
+          }
         } catch (err) {
           console.error('[AUTH ERROR] Sync user profile failed:', err);
         }
       } else {
         setUserProfile(null);
+        setActiveSchoolId('');
+        setSchools([]);
         loadedSchoolIdRef.current = null;
         activeRequestIdRef.current += 1;
         setSyncError(null);
@@ -164,16 +196,31 @@ export default function App() {
   // 2. Load Firestore Timetable Data when auth is active and activeSchoolId changes
   useEffect(() => {
     if (!authReady || !user || !userProfile || userProfile.status !== 'active') return;
-    if (!activeSchoolId) return;
 
-    if (loadedSchoolIdRef.current === activeSchoolId) return;
-    loadedSchoolIdRef.current = activeSchoolId;
+    // Strict validation: Manager only loads their assigned schoolId
+    if (userProfile.role === 'manager') {
+      if (!userProfile.schoolId || !userProfile.schoolId.trim() || activeSchoolId !== userProfile.schoolId) {
+        return;
+      }
+    } else if (userProfile.role === 'admin') {
+      if (!activeSchoolId || !activeSchoolId.trim()) {
+        return;
+      }
+    } else {
+      return;
+    }
+
+    const targetSchoolId = activeSchoolId.trim();
+    if (!targetSchoolId) return;
+
+    if (loadedSchoolIdRef.current === targetSchoolId) return;
+    loadedSchoolIdRef.current = targetSchoolId;
 
     const currentReqId = ++activeRequestIdRef.current;
     setIsSyncing(true);
     setSyncError(null);
 
-    loadSchoolTimetable(activeSchoolId)
+    loadSchoolTimetable(targetSchoolId)
       .then(async (remoteData) => {
         if (currentReqId !== activeRequestIdRef.current) return;
         if (remoteData) {
@@ -210,14 +257,14 @@ export default function App() {
             setVersions(remoteData.versions);
             setStoredVersions(remoteData.versions);
           }
-          console.log(`[FIRESTORE READ SUCCESS] Loaded school: ${activeSchoolId}`);
+          console.log(`[FIRESTORE READ SUCCESS] Loaded school: ${targetSchoolId}`);
         } else {
-          console.log(`[FIRESTORE READ SUCCESS] No existing timetable document for school: ${activeSchoolId}`);
+          console.log(`[FIRESTORE READ SUCCESS] No existing timetable document for school: ${targetSchoolId}`);
         }
 
         // Also fetch school versions
         try {
-          const remoteVersions = await getSchoolVersions(activeSchoolId);
+          const remoteVersions = await getSchoolVersions(targetSchoolId);
           if (remoteVersions && remoteVersions.length > 0) {
             setVersions(remoteVersions);
             setStoredVersions(remoteVersions);
@@ -231,7 +278,7 @@ export default function App() {
       .catch((err) => {
         if (currentReqId !== activeRequestIdRef.current) return;
         const errMsg = err?.code || err?.message || String(err);
-        console.error(`[FIRESTORE READ FAILED] for school: ${activeSchoolId}`, err);
+        console.error(`[FIRESTORE READ FAILED] for school: ${targetSchoolId}`, err);
         setFirestoreSyncError(errMsg, 'LOAD_SCHOOL_DATA_FAILED', currentReqId);
       })
       .finally(() => {
@@ -270,12 +317,27 @@ export default function App() {
         !user ||
         !activeAuthUser ||
         !userProfile ||
-        userProfile.status !== 'active' ||
-        !activeSchoolId
+        userProfile.status !== 'active'
       ) {
         return;
       }
 
+      // Check role authorization for activeSchoolId
+      if (userProfile.role === 'manager') {
+        if (!userProfile.schoolId || !userProfile.schoolId.trim() || activeSchoolId !== userProfile.schoolId) {
+          console.warn('[SYNC BLOCKED] Manager without matching active schoolId');
+          return;
+        }
+      } else if (userProfile.role === 'admin') {
+        if (!activeSchoolId || !activeSchoolId.trim()) {
+          console.warn('[SYNC BLOCKED] Admin without active schoolId');
+          return;
+        }
+      } else {
+        return;
+      }
+
+      const targetSchoolId = activeSchoolId.trim();
       const currentReqId = ++activeRequestIdRef.current;
       setIsSyncing(true);
       try {
@@ -289,7 +351,7 @@ export default function App() {
           versions: overrides?.versions ?? versions,
         };
 
-        const success = await saveSchoolTimetable(activeSchoolId, fullData, context);
+        const success = await saveSchoolTimetable(targetSchoolId, fullData, context);
         if (currentReqId === activeRequestIdRef.current) {
           if (success) {
             setFirestoreSyncSuccess(`WRITE_SUCCESS_${context}`, currentReqId);
@@ -488,7 +550,13 @@ export default function App() {
     const nextVersions = [newVersion, ...versions];
     setVersions(nextVersions);
 
-    if (user && activeSchoolId) {
+    if (
+      user &&
+      userProfile &&
+      userProfile.status === 'active' &&
+      activeSchoolId &&
+      (userProfile.role === 'admin' || (userProfile.role === 'manager' && userProfile.schoolId === activeSchoolId))
+    ) {
       try {
         await saveSchoolVersion(activeSchoolId, newVersion);
         await syncToFirestore({ versions: nextVersions }, 'SAVE_QUICK_VERSION');
@@ -509,7 +577,13 @@ export default function App() {
   const handleDeleteVersion = async (versionId: string) => {
     const nextVersions = versions.filter((v) => v.id !== versionId);
     setVersions(nextVersions);
-    if (user && activeSchoolId) {
+    if (
+      user &&
+      userProfile &&
+      userProfile.status === 'active' &&
+      activeSchoolId &&
+      (userProfile.role === 'admin' || (userProfile.role === 'manager' && userProfile.schoolId === activeSchoolId))
+    ) {
       await deleteSchoolVersion(activeSchoolId, versionId);
       await syncToFirestore({ versions: nextVersions }, 'DELETE_VERSION');
     }
@@ -560,8 +634,24 @@ export default function App() {
         setUser(loggedInUser);
         const profile = await syncUserProfile(loggedInUser);
         setUserProfile(profile);
-        if (profile?.schoolId) {
+
+        if (profile?.role === 'admin') {
+          const schoolList = await getAllSchools();
+          setSchools(schoolList);
+          if (profile.schoolId) {
+            setActiveSchoolId(profile.schoolId);
+          } else if (schoolList.length > 0) {
+            setActiveSchoolId(schoolList[0].id);
+          }
+        } else if (profile?.role === 'manager' && profile.status === 'active' && profile.schoolId) {
           setActiveSchoolId(profile.schoolId);
+          const mySchool = await getSchool(profile.schoolId);
+          if (mySchool) {
+            setSchools([mySchool]);
+          }
+        } else {
+          setActiveSchoolId('');
+          setSchools([]);
         }
       }
     } catch (error: any) {
@@ -586,6 +676,8 @@ export default function App() {
     await logoutFirebase();
     setUser(null);
     setUserProfile(null);
+    setActiveSchoolId('');
+    setSchools([]);
     activeRequestIdRef.current += 1;
     setSyncError(null);
     setLoginError(null);
@@ -810,7 +902,10 @@ export default function App() {
 
           {/* Admin: User Management */}
           {activeTab === 'users' && userProfile?.role === 'admin' && (
-            <UserManagementView currentUserProfile={userProfile} />
+            <UserManagementView
+              currentUserProfile={userProfile}
+              onRefreshCurrentProfile={refreshProfile}
+            />
           )}
 
           {/* Admin: School Management */}
