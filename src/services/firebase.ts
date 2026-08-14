@@ -767,24 +767,24 @@ export async function getSchool(schoolId: string): Promise<School | null> {
  * Save or update a School entity
  */
 export async function saveSchool(school: School): Promise<boolean> {
+  const currentUser = auth.currentUser;
+  const isAdmin = isSystemAdminUser(currentUser);
+  const data = {
+    ...school,
+    updatedAt: new Date().toISOString(),
+  };
+
+  console.log(`[SCHOOL CREATE REQUEST]\nuid: ${currentUser?.uid || 'none'}\nemail: ${currentUser?.email || 'none'}\nisAdmin: ${isAdmin}\nschoolId: ${school.id}\ndata:`, data);
+
   try {
     const schoolDocRef = doc(db, "schools", school.id);
-    const data = {
-      ...school,
-      updatedAt: new Date().toISOString(),
-    };
     await setDoc(schoolDocRef, data, { merge: true });
-    console.log(`[SCHOOLS] Successfully saved school ${school.id}`);
+    console.log(`[SCHOOL CREATE]\nsuccess: Successfully saved school ${school.id}`);
+    console.log(`[FIRESTORE RESULT]\noperation: create\npath: schools/${school.id}\nuid: ${currentUser?.uid}\nrole: ${isAdmin ? 'admin' : 'manager'}\nschoolId: ${school.id}\nstatus: success`);
     return true;
   } catch (error: any) {
-    console.error(`[SCHOOLS] Error saving school ${school.id}:`, {
-      operation: "setDoc",
-      path: `schools/${school.id}`,
-      errorCode: error?.code,
-      errorMessage: error?.message,
-      currentUserUid: auth.currentUser?.uid,
-      currentUserEmail: auth.currentUser?.email,
-    });
+    console.error(`[SCHOOL CREATE]\nerror: Failed to save school ${school.id}`);
+    console.error(`[FIRESTORE RESULT]\noperation: create\npath: schools/${school.id}\nuid: ${currentUser?.uid}\nrole: ${isAdmin ? 'admin' : 'manager'}\nschoolId: ${school.id}\nerrorCode: ${error?.code}\nerrorMessage: ${error?.message}`);
     return false;
   }
 }
@@ -793,20 +793,18 @@ export async function saveSchool(school: School): Promise<boolean> {
  * Delete a school
  */
 export async function deleteSchool(schoolId: string): Promise<boolean> {
+  const currentUser = auth.currentUser;
+  const isAdmin = isSystemAdminUser(currentUser);
+
   try {
     const schoolDocRef = doc(db, "schools", schoolId);
     await deleteDoc(schoolDocRef);
-    console.log(`[SCHOOLS] Successfully deleted school ${schoolId}`);
+    console.log(`[SCHOOL DELETE]\nsuccess: Successfully deleted school ${schoolId}`);
+    console.log(`[FIRESTORE RESULT]\noperation: delete\npath: schools/${schoolId}\nuid: ${currentUser?.uid}\nrole: ${isAdmin ? 'admin' : 'manager'}\nschoolId: ${schoolId}\nstatus: success`);
     return true;
   } catch (error: any) {
-    console.error(`[SCHOOLS] Error deleting school ${schoolId}:`, {
-      operation: "deleteDoc",
-      path: `schools/${schoolId}`,
-      errorCode: error?.code,
-      errorMessage: error?.message,
-      currentUserUid: auth.currentUser?.uid,
-      currentUserEmail: auth.currentUser?.email,
-    });
+    console.error(`[SCHOOL DELETE]\nerror: Failed to delete school ${schoolId}`);
+    console.error(`[FIRESTORE RESULT]\noperation: delete\npath: schools/${schoolId}\nuid: ${currentUser?.uid}\nrole: ${isAdmin ? 'admin' : 'manager'}\nschoolId: ${schoolId}\nerrorCode: ${error?.code}\nerrorMessage: ${error?.message}`);
     return false;
   }
 }
