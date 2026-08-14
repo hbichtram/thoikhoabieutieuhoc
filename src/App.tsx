@@ -76,6 +76,7 @@ import { normalizeScheduleCells } from './utils/timetableUtils';
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [hasUnsavedScheduleChanges, setHasUnsavedScheduleChanges] = useState<boolean>(false);
+  const [timetableFilter, setTimetableFilter] = useState<{ classId?: string; teacherId?: string } | null>(null);
 
   // Firebase Auth, RBAC & Multi-Tenant State
   const [authReady, setAuthReady] = useState<boolean>(false);
@@ -853,6 +854,8 @@ export default function App() {
               subjects={subjects}
               assignments={assignments}
               timeConfig={timeConfig}
+              initialClassId={timetableFilter?.classId}
+              initialTeacherId={timetableFilter?.teacherId}
               onUpdateCells={async (newCells) => {
                 setCells(newCells);
                 await syncToFirestore({ cells: newCells }, 'UPDATE_CELLS');
@@ -864,11 +867,25 @@ export default function App() {
           {activeTab === 'audit' && (
             <ConflictCheckView
               stats={stats}
-              onRunGlobalCheck={() => {
-                alert('Đã hoàn tất kiểm tra toàn bộ thời khóa biểu!');
+              cells={cells}
+              teachers={teachers}
+              classes={classes}
+              subjects={subjects}
+              assignments={assignments}
+              timeConfig={timeConfig}
+              onUpdateCells={async (newCells) => {
+                setCells(newCells);
+                await syncToFirestore({ cells: newCells }, 'UPDATE_CELLS');
               }}
-              onNavigateToTimetable={() => {
+              onRunGlobalCheck={() => {
+                alert('Đã hoàn tất kiểm tra toàn bộ thời khóa biểu! Kết quả đã được làm mới.');
+              }}
+              onNavigateToTimetable={(classId, teacherId) => {
+                setTimetableFilter({ classId, teacherId });
                 setActiveTab('timetable');
+              }}
+              onNavigateToTab={(tab) => {
+                setActiveTab(tab as TabType);
               }}
             />
           )}

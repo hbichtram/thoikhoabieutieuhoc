@@ -47,6 +47,8 @@ interface TimetableDesignViewProps {
   subjects: Subject[];
   assignments: Assignment[];
   timeConfig: TimeConfig;
+  initialClassId?: string;
+  initialTeacherId?: string;
   onUpdateCells: (newCells: ScheduleCell[]) => void;
   onHasUnsavedChangesChange?: (hasUnsaved: boolean) => void;
 }
@@ -58,6 +60,8 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
   subjects,
   assignments,
   timeConfig,
+  initialClassId,
+  initialTeacherId,
   onUpdateCells,
   onHasUnsavedChangesChange,
 }) => {
@@ -88,11 +92,25 @@ export const TimetableDesignView: React.FC<TimetableDesignViewProps> = ({
   const [infoToast, setInfoToast] = useState<string | null>(null);
 
   // View mode: 'class' | 'teacher'
-  const [viewMode, setViewMode] = useState<'class' | 'teacher'>('class');
+  const [viewMode, setViewMode] = useState<'class' | 'teacher'>(() => {
+    if (initialTeacherId && !initialClassId) return 'teacher';
+    return 'class';
+  });
 
   // Selected class or teacher
-  const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || '');
-  const [selectedTeacherId, setSelectedTeacherId] = useState<string>(teachers[0]?.id || '');
+  const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId || classes[0]?.id || '');
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string>(initialTeacherId || teachers[0]?.id || '');
+
+  // Respond to prop updates if user navigates with different filter
+  useEffect(() => {
+    if (initialClassId) {
+      setSelectedClassId(initialClassId);
+      setViewMode('class');
+    } else if (initialTeacherId) {
+      setSelectedTeacherId(initialTeacherId);
+      setViewMode('teacher');
+    }
+  }, [initialClassId, initialTeacherId]);
 
   // Active Assignment for position suggestion
   const [suggestingAssignment, setSuggestingAssignment] = useState<Assignment | null>(null);
