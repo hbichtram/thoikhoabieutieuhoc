@@ -8,18 +8,35 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isSystemAdmin() {
+    // Direct, independent identification of System Admin by UID or Email
+    // Does NOT depend on users/{uid} document existing!
+    function isHardcodedAdmin() {
       return isAuthenticated() && (
-        (request.auth.token.email != null && request.auth.token.email.lower() == 'tram.ai.ctst@gmail.com') ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active')
+        request.auth.uid == 'CDDP2wg0tWb1E01arXBouCfd4ZP2' ||
+        (request.auth.token.email != null && (
+          request.auth.token.email == 'tram.ai.ctst@gmail.com' ||
+          request.auth.token.email.lower() == 'tram.ai.ctst@gmail.com'
+        ))
       );
     }
 
+    function hasValidUserDoc() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isDbAdmin() {
+      return hasValidUserDoc() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+    }
+
+    function isSystemAdmin() {
+      return isHardcodedAdmin() || isDbAdmin();
+    }
+
     function isActiveManager() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+      return isAuthenticated() && !isSystemAdmin() && 
+        hasValidUserDoc() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager' && 
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
     }
@@ -34,29 +51,23 @@ service cloud.firestore {
       // User can read their own profile, Admin can read all user profiles
       allow read: if isAuthenticated() && (
         request.auth.uid == userId || 
-        (resource.data.email != null && request.auth.token.email != null && resource.data.email.lower() == request.auth.token.email.lower()) ||
         isSystemAdmin()
       );
       
-      // Admin can create any user profile (e.g. pre-registering managers with assigned school).
-      // Regular user can create their own initial profile.
+      // Admin can create any user profile (e.g. pre-registering managers). User can create their own profile.
       allow create: if isAuthenticated() && (
-        isSystemAdmin() || (
-          request.auth.uid == userId && (
-            (request.resource.data.role == 'manager' && request.resource.data.status == 'pending') ||
-            (request.auth.token.email != null && request.auth.token.email.lower() == 'tram.ai.ctst@gmail.com' && request.resource.data.role == 'admin')
-          )
-        )
+        isSystemAdmin() || 
+        request.auth.uid == userId
       );
 
       // Admin can update any profile (role, status, schoolId).
-      // Regular user can only update their own non-permission fields (displayName, photoURL, updatedAt).
+      // Regular user can only update their non-sensitive profile fields.
       allow update: if isAuthenticated() && (
         isSystemAdmin() || (
           request.auth.uid == userId &&
-          request.resource.data.role == resource.data.role &&
-          request.resource.data.status == resource.data.status &&
-          request.resource.data.schoolId == resource.data.schoolId
+          (!('role' in request.resource.data) || request.resource.data.role == resource.data.role) &&
+          (!('status' in request.resource.data) || request.resource.data.status == resource.data.status) &&
+          (!('schoolId' in request.resource.data) || request.resource.data.schoolId == resource.data.schoolId)
         )
       );
 
@@ -66,9 +77,11 @@ service cloud.firestore {
 
     // 2. Schools Collection: schools/{schoolId}
     match /schools/{schoolId} {
-      // Admin can manage all schools. Active Manager of this school can read/create/update/delete their own school
+      // Admin can read all schools. Manager can only read their own school.
       allow read: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
-      allow create, update, delete: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
+      // Admin can manage all schools. Manager can update their own school details.
+      allow create, delete: if isAuthenticated() && isSystemAdmin();
+      allow update: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
 
       // Timetable data subcollection: schools/{schoolId}/timetable_data/{docId}
       match /timetable_data/{docId} {
@@ -93,7 +106,6 @@ service cloud.firestore {
     match /timetable_data/{docId} {
       allow read, write: if isAuthenticated() && (
         docId == request.auth.uid ||
-        docId.matches('^' + request.auth.uid + '.*') ||
         isSystemAdmin()
       );
     }

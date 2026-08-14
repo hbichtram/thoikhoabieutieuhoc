@@ -9,6 +9,7 @@ import {
   collection,
   getDocs,
   query,
+  where,
   orderBy,
 } from "firebase/firestore";
 import {
@@ -455,6 +456,14 @@ export async function deleteTimetableVersionFromFirestore(
 }
 
 export const ADMIN_EMAIL = "tram.ai.ctst@gmail.com";
+export const ADMIN_UID = "CDDP2wg0tWb1E01arXBouCfd4ZP2";
+
+export function isSystemAdminUser(user?: { uid?: string; email?: string | null } | null): boolean {
+  if (!user) return false;
+  if (user.uid && user.uid === ADMIN_UID) return true;
+  if (user.email && user.email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) return true;
+  return false;
+}
 
 export const DEFAULT_INITIAL_SCHOOLS: School[] = [
   {
@@ -479,60 +488,108 @@ export const DEFAULT_INITIAL_SCHOOLS: School[] = [
  * Sync or create user profile in Firestore: users/{uid}
  */
 export async function syncUserProfile(user: User): Promise<UserProfile> {
+  console.log(`[AUTH READY]\nuid: ${user.uid}\nemail: ${user.email || 'none'}`);
+
   const userDocRef = doc(db, "users", user.uid);
   const now = new Date().toISOString();
-  const isDefaultAdmin = user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  const isAdmin = isSystemAdminUser(user);
 
   try {
     const snap = await getDoc(userDocRef);
     if (snap.exists()) {
       const data = snap.data() as UserProfile;
       // If user is designated default admin, ensure role is admin & active
-      if (isDefaultAdmin && (data.role !== "admin" || data.status !== "active")) {
+      if (isAdmin && (data.role !== "admin" || data.status !== "active")) {
         const updated: UserProfile = {
           ...data,
+          displayName: data.displayName || user.displayName || user.email?.split('@')[0] || "Admin",
+          email: user.email || data.email || null,
           role: "admin",
           status: "active",
-          schoolId: data.schoolId || "school_001",
           updatedAt: now,
         };
         await setDoc(userDocRef, updated, { merge: true });
+        
+        console.log(`[USER PROFILE]\nuid: ${updated.uid}\nrole: ${updated.role}\nschoolId: ${updated.schoolId || 'none'}\nstatus: ${updated.status}`);
+        console.log(`[AUTHORIZATION]\nisAdmin: true\nisManager: false\nisApproved: true`);
         return updated;
       }
+
+      const isManager = data.role === "manager";
+      const isApproved = data.status === "active";
+      console.log(`[USER PROFILE]\nuid: ${data.uid}\nrole: ${data.role}\nschoolId: ${data.schoolId || 'none'}\nstatus: ${data.status}`);
+      console.log(`[AUTHORIZATION]\nisAdmin: ${data.role === 'admin'}\nisManager: ${isManager}\nisApproved: ${isApproved}`);
       return data;
     } else {
-      // Create new profile
+      // Check if user was pre-registered by Admin using email
+      let preRegistered: UserProfile | null = null;
+      if (user.email) {
+        try {
+          const q = query(
+            collection(db, "users"),
+            where("email", "==", user.email.trim().toLowerCase())
+          );
+          const querySnap = await getDocs(q);
+          if (!querySnap.empty) {
+            const foundDoc = querySnap.docs[0];
+            preRegistered = foundDoc.data() as UserProfile;
+            // Clean up temporary pre-registered doc if UID differed
+            if (foundDoc.id !== user.uid) {
+              try {
+                await deleteDoc(doc(db, "users", foundDoc.id));
+              } catch (_) {}
+            }
+          }
+        } catch (queryErr) {
+          console.warn("[USER PROFILE] Could not query pre-registered users:", queryErr);
+        }
+      }
+
+      // Create initial profile
       const newProfile: UserProfile = {
         uid: user.uid,
-        displayName: user.displayName || null,
+        displayName: user.displayName || preRegistered?.displayName || user.email?.split('@')[0] || "Người dùng",
         email: user.email || null,
         photoURL: user.photoURL || null,
-        role: isDefaultAdmin ? "admin" : "manager",
-        status: isDefaultAdmin ? "active" : "pending",
-        schoolId: isDefaultAdmin ? "school_001" : null,
-        schoolName: isDefaultAdmin ? "Trường Tiểu học Chu Văn An" : null,
-        createdAt: now,
+        role: isAdmin ? "admin" : (preRegistered?.role || "manager"),
+        status: isAdmin ? "active" : (preRegistered?.status || "pending"),
+        schoolId: isAdmin ? (preRegistered?.schoolId || null) : (preRegistered?.schoolId || null),
+        schoolName: preRegistered?.schoolName || null,
+        createdAt: preRegistered?.createdAt || now,
         updatedAt: now,
       };
 
       await setDoc(userDocRef, newProfile);
-      console.log("[USER PROFILE] Created initial profile:", newProfile);
+      
+      const isManager = newProfile.role === "manager";
+      const isApproved = newProfile.status === "active";
+      console.log(`[USER PROFILE]\nuid: ${newProfile.uid}\nrole: ${newProfile.role}\nschoolId: ${newProfile.schoolId || 'none'}\nstatus: ${newProfile.status}`);
+      console.log(`[AUTHORIZATION]\nisAdmin: ${newProfile.role === 'admin'}\nisManager: ${isManager}\nisApproved: ${isApproved}`);
       return newProfile;
     }
-  } catch (error) {
-    console.error("[USER PROFILE] Error syncing profile:", error);
-    // Fallback in-memory profile if Firestore throws permission or network error
-    return {
+  } catch (error: any) {
+    console.error("[USER PROFILE] Error syncing profile:", {
+      operation: "syncUserProfile",
+      path: `users/${user.uid}`,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      currentUserUid: user.uid,
+      currentUserEmail: user.email,
+    });
+    
+    // In-memory fallback
+    const fallbackProfile: UserProfile = {
       uid: user.uid,
-      displayName: user.displayName || null,
+      displayName: user.displayName || user.email?.split('@')[0] || "Người dùng",
       email: user.email || null,
       photoURL: user.photoURL || null,
-      role: isDefaultAdmin ? "admin" : "manager",
-      status: isDefaultAdmin ? "active" : "pending",
-      schoolId: isDefaultAdmin ? "school_001" : null,
+      role: isAdmin ? "admin" : "manager",
+      status: isAdmin ? "active" : "pending",
+      schoolId: null,
       createdAt: now,
       updatedAt: now,
     };
+    return fallbackProfile;
   }
 }
 
@@ -830,6 +887,10 @@ export async function loadSchoolTimetable(schoolId: string): Promise<any | null>
   }
 
   const cleanSchoolId = schoolId.trim();
+  const timetablePath = `schools/${cleanSchoolId}/timetable_data/main`;
+  console.log(`[SCHOOL LOAD]\nschoolId: ${cleanSchoolId}`);
+  console.log(`[TIMETABLE LOAD]\npath: ${timetablePath}`);
+
   const docRef = doc(db, "schools", cleanSchoolId, "timetable_data", "main");
 
   try {
@@ -837,12 +898,19 @@ export async function loadSchoolTimetable(schoolId: string): Promise<any | null>
     if (snap.exists()) {
       const data = snap.data();
       if (data && data.payload) {
+        console.log(`[FIRESTORE RESULT]\nsuccess: Loaded timetable for ${cleanSchoolId}`);
         return JSON.parse(data.payload);
       }
     }
+    console.log(`[FIRESTORE RESULT]\nsuccess: No existing timetable document for ${cleanSchoolId} (empty dataset)`);
     return null;
-  } catch (error) {
-    console.error(`[FIRESTORE MULTI-TENANT] Error loading school timetable for ${cleanSchoolId}:`, error);
+  } catch (error: any) {
+    console.error(`[FIRESTORE RESULT]\nerror: Failed to load ${timetablePath}`, {
+      code: error?.code,
+      message: error?.message,
+      currentUserUid: auth.currentUser?.uid,
+      currentUserEmail: auth.currentUser?.email,
+    });
     throw error;
   }
 }
