@@ -4,9 +4,12 @@ import {
   doc,
   getDoc,
   setDoc,
+  updateDoc,
   deleteDoc,
   collection,
   getDocs,
+  query,
+  orderBy,
 } from "firebase/firestore";
 import {
   getAuth,
@@ -16,6 +19,7 @@ import {
   onAuthStateChanged,
   User,
 } from "firebase/auth";
+import { UserProfile, School, UserSummary } from "../types";
 
 // Your web app's Firebase configuration
 export const firebaseConfig = {
@@ -449,3 +453,410 @@ export async function deleteTimetableVersionFromFirestore(
     context
   );
 }
+
+export const ADMIN_EMAIL = "tram.ai.ctst@gmail.com";
+
+export const DEFAULT_INITIAL_SCHOOLS: School[] = [
+  {
+    id: "school_001",
+    name: "Trường Tiểu học Chu Văn An",
+    code: "CVA",
+    address: "Hà Nội",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "school_002",
+    name: "Trường Tiểu học Nguyễn Du",
+    code: "THND",
+    address: "TP. Hồ Chí Minh",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+/**
+ * Sync or create user profile in Firestore: users/{uid}
+ */
+export async function syncUserProfile(user: User): Promise<UserProfile> {
+  const userDocRef = doc(db, "users", user.uid);
+  const now = new Date().toISOString();
+  const isDefaultAdmin = user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
+  try {
+    const snap = await getDoc(userDocRef);
+    if (snap.exists()) {
+      const data = snap.data() as UserProfile;
+      // If user is designated default admin, ensure role is admin & active
+      if (isDefaultAdmin && (data.role !== "admin" || data.status !== "active")) {
+        const updated: UserProfile = {
+          ...data,
+          role: "admin",
+          status: "active",
+          schoolId: data.schoolId || "school_001",
+          updatedAt: now,
+        };
+        await setDoc(userDocRef, updated, { merge: true });
+        return updated;
+      }
+      return data;
+    } else {
+      // Create new profile
+      const newProfile: UserProfile = {
+        uid: user.uid,
+        displayName: user.displayName || null,
+        email: user.email || null,
+        photoURL: user.photoURL || null,
+        role: isDefaultAdmin ? "admin" : "manager",
+        status: isDefaultAdmin ? "active" : "pending",
+        schoolId: isDefaultAdmin ? "school_001" : null,
+        schoolName: isDefaultAdmin ? "Trường Tiểu học Chu Văn An" : null,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await setDoc(userDocRef, newProfile);
+      console.log("[USER PROFILE] Created initial profile:", newProfile);
+      return newProfile;
+    }
+  } catch (error) {
+    console.error("[USER PROFILE] Error syncing profile:", error);
+    // Fallback in-memory profile if Firestore throws permission or network error
+    return {
+      uid: user.uid,
+      displayName: user.displayName || null,
+      email: user.email || null,
+      photoURL: user.photoURL || null,
+      role: isDefaultAdmin ? "admin" : "manager",
+      status: isDefaultAdmin ? "active" : "pending",
+      schoolId: isDefaultAdmin ? "school_001" : null,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+}
+
+/**
+ * Get a user's profile from users/{uid}
+ */
+export async function getUserProfile(uid: string): Promise<UserProfile | null> {
+  try {
+    const userDocRef = doc(db, "users", uid);
+    const snap = await getDoc(userDocRef);
+    if (snap.exists()) {
+      return snap.data() as UserProfile;
+    }
+    return null;
+  } catch (error) {
+    console.error("[USER PROFILE] Error getting profile:", error);
+    return null;
+  }
+}
+
+/**
+ * Get all user profiles (Admin only)
+ */
+export async function getAllUserProfiles(): Promise<UserProfile[]> {
+  try {
+    const usersCol = collection(db, "users");
+    const q = query(usersCol, orderBy("createdAt", "desc"));
+    const snap = await getDocs(q);
+    const users: UserProfile[] = [];
+    snap.forEach((d) => {
+      users.push(d.data() as UserProfile);
+    });
+    return users;
+  } catch (error) {
+    console.error("[USER PROFILE] Error fetching all user profiles:", error);
+    return [];
+  }
+}
+
+/**
+ * Update user profile by Admin (Admin only)
+ */
+export async function updateUserProfileByAdmin(
+  uid: string,
+  updates: Partial<UserProfile>
+): Promise<boolean> {
+  try {
+    const userDocRef = doc(db, "users", uid);
+    const updateData = {
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    await updateDoc(userDocRef, updateData);
+    console.log(`[USER PROFILE] Successfully updated user ${uid}:`, updateData);
+    return true;
+  } catch (error) {
+    console.error(`[USER PROFILE] Error updating user ${uid}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Delete user profile by Admin
+ */
+export async function deleteUserProfileByAdmin(uid: string): Promise<boolean> {
+  try {
+    const userDocRef = doc(db, "users", uid);
+    await deleteDoc(userDocRef);
+    console.log(`[USER PROFILE] Successfully deleted user profile ${uid}`);
+    return true;
+  } catch (error) {
+    console.error(`[USER PROFILE] Error deleting user profile ${uid}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Get all schools from schools collection
+ */
+export async function getAllSchools(): Promise<School[]> {
+  try {
+    const schoolsCol = collection(db, "schools");
+    const snap = await getDocs(schoolsCol);
+    if (snap.empty) {
+      // If no schools found, initialize default schools
+      const schools: School[] = [];
+      for (const s of DEFAULT_INITIAL_SCHOOLS) {
+        await setDoc(doc(db, "schools", s.id), s);
+        schools.push(s);
+      }
+      return schools;
+    }
+    const list: School[] = [];
+    snap.forEach((d) => {
+      list.push(d.data() as School);
+    });
+    return list;
+  } catch (error) {
+    console.error("[SCHOOLS] Error fetching schools, falling back to defaults:", error);
+    return DEFAULT_INITIAL_SCHOOLS;
+  }
+}
+
+/**
+ * Get school by schoolId
+ */
+export async function getSchool(schoolId: string): Promise<School | null> {
+  try {
+    const schoolDocRef = doc(db, "schools", schoolId);
+    const snap = await getDoc(schoolDocRef);
+    if (snap.exists()) {
+      return snap.data() as School;
+    }
+    return null;
+  } catch (error) {
+    console.error(`[SCHOOLS] Error fetching school ${schoolId}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Save or update a School entity
+ */
+export async function saveSchool(school: School): Promise<boolean> {
+  try {
+    const schoolDocRef = doc(db, "schools", school.id);
+    const data = {
+      ...school,
+      updatedAt: new Date().toISOString(),
+    };
+    await setDoc(schoolDocRef, data, { merge: true });
+    return true;
+  } catch (error) {
+    console.error(`[SCHOOLS] Error saving school ${school.id}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Delete a school
+ */
+export async function deleteSchool(schoolId: string): Promise<boolean> {
+  try {
+    const schoolDocRef = doc(db, "schools", schoolId);
+    await deleteDoc(schoolDocRef);
+    return true;
+  } catch (error) {
+    console.error(`[SCHOOLS] Error deleting school ${schoolId}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Save complete full state to school path: schools/{schoolId}/timetable_data/main
+ */
+export async function saveSchoolTimetable(
+  schoolId: string,
+  fullData: {
+    teachers: any[];
+    classes: any[];
+    subjects: any[];
+    assignments: any[];
+    timeConfig: any;
+    cells: any[];
+    versions: any[];
+  },
+  userSummaryOrContext?: UserSummary | string,
+  maybeContext?: string
+): Promise<boolean> {
+  if (!schoolId || !schoolId.trim()) {
+    console.warn("[FIRESTORE MULTI-TENANT] Cannot save: schoolId is empty.");
+    return false;
+  }
+
+  let userSummary: UserSummary | undefined;
+  let context = "SAVE_SCHOOL_TIMETABLE";
+
+  if (typeof userSummaryOrContext === 'string') {
+    context = userSummaryOrContext;
+  } else if (userSummaryOrContext) {
+    userSummary = userSummaryOrContext;
+    if (maybeContext) context = maybeContext;
+  }
+
+  const cleanSchoolId = schoolId.trim();
+  const normalizedTeachers = (fullData.teachers || []).map((t) => normalizeTeacher(t));
+  normalizedTeachers.forEach((t) => validateTeacherData(t));
+
+  const cleanFullData = {
+    ...fullData,
+    teachers: normalizedTeachers,
+  };
+
+  const payloadStr = JSON.stringify(cleanFullData);
+  const updatedAt = new Date().toISOString();
+
+  const docRef = doc(db, "schools", cleanSchoolId, "timetable_data", "main");
+  const docPath = `schools/${cleanSchoolId}/timetable_data/main`;
+
+  return await performWriteDiagnostic(
+    "setDoc",
+    `schools/${cleanSchoolId}/timetable_data`,
+    "main",
+    async () => {
+      await setDoc(docRef, {
+        schoolId: cleanSchoolId,
+        payload: payloadStr,
+        teachersCount: normalizedTeachers.length,
+        assignmentsCount: cleanFullData.assignments.length,
+        updatedAt,
+        lastUpdatedBy: userSummary || null,
+      });
+    },
+    { schoolId: cleanSchoolId, payloadLength: payloadStr.length },
+    `${context} -> ${docPath}`
+  );
+}
+
+/**
+ * Load full state from school path: schools/{schoolId}/timetable_data/main
+ */
+export async function loadSchoolTimetable(schoolId: string): Promise<any | null> {
+  if (!schoolId || !schoolId.trim()) {
+    console.warn("[FIRESTORE MULTI-TENANT] Cannot load: schoolId is empty.");
+    return null;
+  }
+
+  const cleanSchoolId = schoolId.trim();
+  const docRef = doc(db, "schools", cleanSchoolId, "timetable_data", "main");
+
+  try {
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && data.payload) {
+        return JSON.parse(data.payload);
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error(`[FIRESTORE MULTI-TENANT] Error loading school timetable for ${cleanSchoolId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Save timetable version under schools/{schoolId}/versions/{versionId}
+ */
+export async function saveSchoolTimetableVersion(
+  schoolId: string,
+  version: any,
+  userSummary?: UserSummary
+): Promise<boolean> {
+  if (!schoolId || !schoolId.trim()) return false;
+  const cleanSchoolId = schoolId.trim();
+  const versionRef = doc(db, "schools", cleanSchoolId, "versions", version.id);
+
+  return await performWriteDiagnostic(
+    "setDoc",
+    `schools/${cleanSchoolId}/versions`,
+    version.id,
+    async () => {
+      await setDoc(versionRef, {
+        ...version,
+        schoolId: cleanSchoolId,
+        createdBy: userSummary || null,
+        updatedAt: new Date().toISOString(),
+      });
+    },
+    { schoolId: cleanSchoolId, versionId: version.id, name: version.name },
+    `SAVE_SCHOOL_VERSION -> schools/${cleanSchoolId}/versions/${version.id}`
+  );
+}
+
+/**
+ * Load all timetable versions for a school from schools/{schoolId}/versions
+ */
+export async function loadSchoolTimetableVersions(schoolId: string): Promise<any[]> {
+  if (!schoolId || !schoolId.trim()) return [];
+  const cleanSchoolId = schoolId.trim();
+
+  try {
+    const versionsCol = collection(db, "schools", cleanSchoolId, "versions");
+    const snap = await getDocs(versionsCol);
+    const list: any[] = [];
+    snap.forEach((d) => {
+      list.push(d.data());
+    });
+    // Sort descending by timestamp/updatedAt
+    list.sort((a, b) => new Date(b.updatedAt || b.timestamp || 0).getTime() - new Date(a.updatedAt || a.timestamp || 0).getTime());
+    return list;
+  } catch (error) {
+    console.error(`[FIRESTORE MULTI-TENANT] Error loading versions for school ${cleanSchoolId}:`, error);
+    return [];
+  }
+}
+
+/**
+ * Delete a timetable version from schools/{schoolId}/versions/{versionId}
+ */
+export async function deleteSchoolTimetableVersion(
+  schoolId: string,
+  versionId: string
+): Promise<boolean> {
+  if (!schoolId || !schoolId.trim() || !versionId) return false;
+  const cleanSchoolId = schoolId.trim();
+  const versionRef = doc(db, "schools", cleanSchoolId, "versions", versionId);
+
+  return await performWriteDiagnostic(
+    "deleteDoc",
+    `schools/${cleanSchoolId}/versions`,
+    versionId,
+    async () => {
+      await deleteDoc(versionRef);
+    },
+    undefined,
+    `DELETE_SCHOOL_VERSION -> schools/${cleanSchoolId}/versions/${versionId}`
+  );
+}
+
+/**
+ * Aliases for compatibility
+ */
+export const saveSchoolVersion = saveSchoolTimetableVersion;
+export const getSchoolVersions = loadSchoolTimetableVersions;
+export const deleteSchoolVersion = deleteSchoolTimetableVersion;
+

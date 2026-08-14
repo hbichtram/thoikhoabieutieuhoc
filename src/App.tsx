@@ -1,5 +1,6 @@
 /**
  * THỜI KHÓA BIỂU TIỂU HỌC - Trợ lý thiết kế và xếp thời khóa biểu
+ * Tác giả: Hồng Bích Trâm
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -15,6 +16,10 @@ import { ConflictCheckView } from './components/views/ConflictCheckView';
 import { ReportsView } from './components/views/ReportsView';
 import { SettingsView } from './components/views/SettingsView';
 import { LoginView } from './components/LoginView';
+import { PendingApprovalView } from './components/views/PendingApprovalView';
+import { DisabledAccountView } from './components/views/DisabledAccountView';
+import { UserManagementView } from './components/views/UserManagementView';
+import { SchoolManagementView } from './components/views/SchoolManagementView';
 import { Calendar, RefreshCw } from 'lucide-react';
 
 import {
@@ -25,6 +30,8 @@ import {
   TimeConfig,
   ScheduleCell,
   ScheduleVersion,
+  UserProfile,
+  School,
 } from './types';
 
 import {
@@ -50,8 +57,14 @@ import {
   subscribeAuthState,
   loginWithGoogle,
   logoutFirebase,
-  saveFullStateToFirestore,
-  loadFullStateFromFirestore,
+  syncUserProfile,
+  getUserProfile,
+  getAllSchools,
+  saveSchoolTimetable,
+  loadSchoolTimetable,
+  saveSchoolVersion,
+  getSchoolVersions,
+  deleteSchoolVersion,
 } from './services/firebase';
 
 import { User } from 'firebase/auth';
@@ -59,44 +72,26 @@ import { checkFullSchedule } from './utils/conflictChecker';
 import { normalizeTeacher } from './utils/teacherUtils';
 import { normalizeScheduleCells } from './utils/timetableUtils';
 
-const APP_BUILD_VERSION = "TKB-SMART-FIREBASE-FIX-2026-08-11";
-console.log("[APP BUILD VERSION]", APP_BUILD_VERSION);
-
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [hasUnsavedScheduleChanges, setHasUnsavedScheduleChanges] = useState<boolean>(false);
 
-  // Firebase Auth & Sync State
+  // Firebase Auth, RBAC & Multi-Tenant State
   const [authReady, setAuthReady] = useState<boolean>(false);
   const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [activeSchoolId, setActiveSchoolId] = useState<string>('school_001');
+
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-
-  const activeRequestIdRef = useRef<number>(0);
-
-  const setFirestoreSyncSuccess = useCallback((source: string, reqId: number) => {
-    if (reqId === activeRequestIdRef.current) {
-      console.log(`[FIRESTORE SYNC SUCCESS] Cleared syncError from source: ${source} (reqId #${reqId})`);
-      setSyncError(null);
-    }
-  }, []);
-
-  const setFirestoreSyncError = useCallback((errVal: string, source: string, reqId: number) => {
-    if (reqId === activeRequestIdRef.current) {
-      console.error(`[FIRESTORE SYNC ERROR] setSyncError from source: ${source} (reqId #${reqId}) ->`, errVal);
-      setSyncError(errVal);
-    } else {
-      console.warn(`[FIRESTORE SYNC IGNORED STALE ERROR] reqId #${reqId} vs active #${activeRequestIdRef.current} from ${source}`);
-    }
-  }, []);
-
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
-  const isSeedingRef = useRef<boolean>(false);
-  const loadedUidRef = useRef<string | null>(null);
+  const activeRequestIdRef = useRef<number>(0);
+  const loadedSchoolIdRef = useRef<string | null>(null);
 
-  // Core States
+  // Core States for Timetable Data
   const [teachers, setTeachers] = useState<Teacher[]>(getStoredTeachers);
   const [classes, setClasses] = useState<ClassItem[]>(getStoredClasses);
   const [subjects, setSubjects] = useState<Subject[]>(getStoredSubjects);
@@ -105,43 +100,81 @@ export default function App() {
   const [cells, setCells] = useState<ScheduleCell[]>(getStoredScheduleCells);
   const [versions, setVersions] = useState<ScheduleVersion[]>(getStoredVersions);
 
-  // 1. Listen to Firebase Authentication State
-  useEffect(() => {
-    const unsubscribe = subscribeAuthState((currentUser) => {
-      setUser(currentUser);
-      setAuthReady(true);
-      console.log("[AUTH READY STATE]", {
-        authReady: true,
-        isAuthenticated: !!currentUser,
-        uid: currentUser?.uid,
-        email: currentUser?.email,
-      });
+  const setFirestoreSyncSuccess = useCallback((source: string, reqId: number) => {
+    if (reqId === activeRequestIdRef.current) {
+      console.log(`[FIRESTORE SYNC SUCCESS] (${source}) (reqId #${reqId})`);
+      setSyncError(null);
+    }
+  }, []);
 
-      if (!currentUser) {
-        loadedUidRef.current = null;
-        isSeedingRef.current = false;
+  const setFirestoreSyncError = useCallback((errVal: string, source: string, reqId: number) => {
+    if (reqId === activeRequestIdRef.current) {
+      console.error(`[FIRESTORE SYNC ERROR] (${source}) (reqId #${reqId}) ->`, errVal);
+      setSyncError(errVal);
+    }
+  }, []);
+
+  // Refresh User Profile
+  const refreshProfile = useCallback(async () => {
+    if (!user) return;
+    try {
+      const profile = await getUserProfile(user.uid);
+      if (profile) {
+        setUserProfile(profile);
+        if (profile.schoolId) {
+          setActiveSchoolId(profile.schoolId);
+        }
+      }
+    } catch (e) {
+      console.error('Error refreshing user profile:', e);
+    }
+  }, [user]);
+
+  // 1. Listen to Firebase Authentication State & sync user profile
+  useEffect(() => {
+    const unsubscribe = subscribeAuthState(async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        try {
+          const profile = await syncUserProfile(currentUser);
+          setUserProfile(profile);
+          if (profile?.schoolId) {
+            setActiveSchoolId(profile.schoolId);
+          }
+
+          // Fetch schools list
+          const schoolList = await getAllSchools();
+          setSchools(schoolList);
+        } catch (err) {
+          console.error('[AUTH ERROR] Sync user profile failed:', err);
+        }
+      } else {
+        setUserProfile(null);
+        loadedSchoolIdRef.current = null;
         activeRequestIdRef.current += 1;
         setSyncError(null);
         setIsSyncing(false);
       }
+      setAuthReady(true);
     });
 
     return () => unsubscribe();
   }, []);
 
-  // 2. Load or Seed Firestore Data ONLY after Auth is Ready and User exists
+  // 2. Load Firestore Timetable Data when auth is active and activeSchoolId changes
   useEffect(() => {
-    if (!authReady || !user) return;
+    if (!authReady || !user || !userProfile || userProfile.status !== 'active') return;
+    if (!activeSchoolId) return;
 
-    if (loadedUidRef.current === user.uid) return;
-    loadedUidRef.current = user.uid;
+    if (loadedSchoolIdRef.current === activeSchoolId) return;
+    loadedSchoolIdRef.current = activeSchoolId;
 
     const currentReqId = ++activeRequestIdRef.current;
     setIsSyncing(true);
     setSyncError(null);
 
-    loadFullStateFromFirestore(user.uid)
-      .then((remoteData) => {
+    loadSchoolTimetable(activeSchoolId)
+      .then(async (remoteData) => {
         if (currentReqId !== activeRequestIdRef.current) return;
         if (remoteData) {
           if (remoteData.teachers) {
@@ -166,7 +199,10 @@ export default function App() {
             setStoredTimeConfig(remoteData.timeConfig);
           }
           if (remoteData.cells) {
-            const normalizedCells = normalizeScheduleCells(remoteData.cells, remoteData.assignments || assignments);
+            const normalizedCells = normalizeScheduleCells(
+              remoteData.cells,
+              remoteData.assignments || assignments
+            );
             setCells(normalizedCells);
             setStoredScheduleCells(normalizedCells);
           }
@@ -174,24 +210,36 @@ export default function App() {
             setVersions(remoteData.versions);
             setStoredVersions(remoteData.versions);
           }
-          console.log(`[FIRESTORE READ SUCCESS] Fully loaded data from Firestore for uid: ${user.uid} (reqId #${currentReqId})`);
+          console.log(`[FIRESTORE READ SUCCESS] Loaded school: ${activeSchoolId}`);
         } else {
-          console.log(`[FIRESTORE READ SUCCESS (EMPTY)] Document not found for uid: ${user.uid} (reqId #${currentReqId}).`);
+          console.log(`[FIRESTORE READ SUCCESS] No existing timetable document for school: ${activeSchoolId}`);
         }
-        setFirestoreSyncSuccess("LOAD_FULL_STATE_SUCCESS", currentReqId);
+
+        // Also fetch school versions
+        try {
+          const remoteVersions = await getSchoolVersions(activeSchoolId);
+          if (remoteVersions && remoteVersions.length > 0) {
+            setVersions(remoteVersions);
+            setStoredVersions(remoteVersions);
+          }
+        } catch (vErr) {
+          console.warn('Could not fetch versions collection:', vErr);
+        }
+
+        setFirestoreSyncSuccess('LOAD_SCHOOL_DATA_SUCCESS', currentReqId);
       })
       .catch((err) => {
         if (currentReqId !== activeRequestIdRef.current) return;
         const errMsg = err?.code || err?.message || String(err);
-        console.error(`[FIRESTORE READ FAILED] (reqId #${currentReqId})`, err);
-        setFirestoreSyncError(errMsg, "LOAD_FULL_STATE_FAILED", currentReqId);
+        console.error(`[FIRESTORE READ FAILED] for school: ${activeSchoolId}`, err);
+        setFirestoreSyncError(errMsg, 'LOAD_SCHOOL_DATA_FAILED', currentReqId);
       })
       .finally(() => {
         if (currentReqId === activeRequestIdRef.current) {
           setIsSyncing(false);
         }
       });
-  }, [authReady, user, setFirestoreSyncSuccess, setFirestoreSyncError]);
+  }, [authReady, user, userProfile, activeSchoolId, setFirestoreSyncSuccess, setFirestoreSyncError]);
 
   // Sync state to LocalStorage as secondary fallback cache
   useEffect(() => { setStoredTeachers(teachers); }, [teachers]);
@@ -202,66 +250,85 @@ export default function App() {
   useEffect(() => { setStoredScheduleCells(cells); }, [cells]);
   useEffect(() => { setStoredVersions(versions); }, [versions]);
 
-  // Helper function to sync current state to Firestore
-  const syncToFirestore = useCallback(async (
-    overrides?: {
-      teachers?: Teacher[];
-      classes?: ClassItem[];
-      subjects?: Subject[];
-      assignments?: Assignment[];
-      timeConfig?: TimeConfig;
-      cells?: ScheduleCell[];
-      versions?: ScheduleVersion[];
-    },
-    context: string = "SYNC_TO_FIRESTORE"
-  ) => {
-    const activeAuthUser = auth.currentUser;
-    if (!authReady || !user || !activeAuthUser || activeAuthUser.uid !== user.uid) {
-      console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng hoặc chưa Auth Ready. Bỏ qua ghi Firestore.", {
-        authReady,
-        hasUser: !!user,
-        activeAuthUid: activeAuthUser?.uid
-      });
-      return;
-    }
+  // Helper to persist changes into Firestore for the current active school
+  const syncToFirestore = useCallback(
+    async (
+      overrides?: {
+        teachers?: Teacher[];
+        classes?: ClassItem[];
+        subjects?: Subject[];
+        assignments?: Assignment[];
+        timeConfig?: TimeConfig;
+        cells?: ScheduleCell[];
+        versions?: ScheduleVersion[];
+      },
+      context: string = 'SYNC_TO_FIRESTORE'
+    ) => {
+      const activeAuthUser = auth.currentUser;
+      if (
+        !authReady ||
+        !user ||
+        !activeAuthUser ||
+        !userProfile ||
+        userProfile.status !== 'active' ||
+        !activeSchoolId
+      ) {
+        return;
+      }
 
-    const currentReqId = ++activeRequestIdRef.current;
-    setIsSyncing(true);
-    try {
-      const fullData = {
-        teachers: overrides?.teachers ?? teachers,
-        classes: overrides?.classes ?? classes,
-        subjects: overrides?.subjects ?? subjects,
-        assignments: overrides?.assignments ?? assignments,
-        timeConfig: overrides?.timeConfig ?? timeConfig,
-        cells: overrides?.cells ?? cells,
-        versions: overrides?.versions ?? versions,
-      };
+      const currentReqId = ++activeRequestIdRef.current;
+      setIsSyncing(true);
+      try {
+        const fullData = {
+          teachers: overrides?.teachers ?? teachers,
+          classes: overrides?.classes ?? classes,
+          subjects: overrides?.subjects ?? subjects,
+          assignments: overrides?.assignments ?? assignments,
+          timeConfig: overrides?.timeConfig ?? timeConfig,
+          cells: overrides?.cells ?? cells,
+          versions: overrides?.versions ?? versions,
+        };
 
-      const success = await saveFullStateToFirestore(fullData, user.uid, context);
-      if (currentReqId === activeRequestIdRef.current) {
-        if (success) {
-          setFirestoreSyncSuccess(`WRITE_SUCCESS_${context}`, currentReqId);
-          console.log(`[FIRESTORE WRITE SUCCESS] (${context}) for uid: ${user.uid} (reqId #${currentReqId})`);
+        const success = await saveSchoolTimetable(activeSchoolId, fullData, context);
+        if (currentReqId === activeRequestIdRef.current) {
+          if (success) {
+            setFirestoreSyncSuccess(`WRITE_SUCCESS_${context}`, currentReqId);
+          }
+        }
+      } catch (error: any) {
+        if (currentReqId === activeRequestIdRef.current) {
+          const errMsg = error?.code || error?.message || String(error);
+          setFirestoreSyncError(errMsg, `WRITE_ERROR_${context}`, currentReqId);
+          console.error(`[FIRESTORE WRITE ERROR] (${context}):`, error);
+        }
+      } finally {
+        if (currentReqId === activeRequestIdRef.current) {
+          setIsSyncing(false);
         }
       }
-    } catch (error: any) {
-      if (currentReqId === activeRequestIdRef.current) {
-        const errMsg = error?.code || error?.message || String(error);
-        setFirestoreSyncError(errMsg, `WRITE_ERROR_${context}`, currentReqId);
-        console.error(`[FIRESTORE WRITE ERROR] (${context}) (reqId #${currentReqId}):`, error);
-        alert(`⚠️ Lỗi ghi Firestore [${context}]: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    } finally {
-      if (currentReqId === activeRequestIdRef.current) {
-        setIsSyncing(false);
-      }
-    }
-  }, [authReady, user, teachers, classes, subjects, assignments, timeConfig, cells, versions, setFirestoreSyncSuccess, setFirestoreSyncError]);
+    },
+    [
+      authReady,
+      user,
+      userProfile,
+      activeSchoolId,
+      teachers,
+      classes,
+      subjects,
+      assignments,
+      timeConfig,
+      cells,
+      versions,
+      setFirestoreSyncSuccess,
+      setFirestoreSyncError,
+    ]
+  );
 
   const handleTabChange = (newTab: TabType) => {
     if (activeTab === 'timetable' && hasUnsavedScheduleChanges && newTab !== 'timetable') {
-      const confirmLeave = confirm('⚠️ Bạn có thay đổi TKB chưa được lưu.\n\nBạn có muốn rời khỏi trang không?');
+      const confirmLeave = confirm(
+        '⚠️ Bạn có thay đổi TKB chưa được lưu.\n\nBạn có muốn rời khỏi trang không?'
+      );
       if (!confirmLeave) return;
     }
     setActiveTab(newTab);
@@ -275,164 +342,176 @@ export default function App() {
     const norm = normalizeTeacher(newTeacher);
     const next = [...teachers, norm];
     setTeachers(next);
-    await syncToFirestore({ teachers: next }, "ADD_TEACHER");
+    await syncToFirestore({ teachers: next }, 'ADD_TEACHER');
   };
 
   const handleUpdateTeacher = async (updatedTeacher: Teacher) => {
     const norm = normalizeTeacher(updatedTeacher);
     const next = teachers.map((t) => (t.id === norm.id ? norm : t));
     setTeachers(next);
-    await syncToFirestore({ teachers: next }, "UPDATE_TEACHER");
+    await syncToFirestore({ teachers: next }, 'UPDATE_TEACHER');
   };
 
-  const handleDeleteTeacher = async (id: string) => {
-    const targetTeacher = teachers.find((t) => t.id === id || t.code === id);
-    const targetId = targetTeacher ? targetTeacher.id : id;
-    const targetCode = targetTeacher ? targetTeacher.code : id;
-
-    const nextTeachers = teachers.filter((t) => t.id !== targetId && t.code !== targetCode);
-    const nextClasses = classes.map((c) =>
-      c.homeroomTeacherId === targetId || c.homeroomTeacherId === targetCode
-        ? { ...c, homeroomTeacherId: undefined }
-        : c
+  const handleDeleteTeacher = async (teacherId: string) => {
+    const nextTeachers = teachers.filter((t) => t.id !== teacherId);
+    const nextAssignments = assignments.map((a) =>
+      a.teacherId === teacherId ? { ...a, teacherId: undefined } : a
     );
-    const nextAssignments = assignments.filter((a) => a.teacherId !== targetId && a.teacherId !== targetCode);
-    const nextCells = cells.filter((c) => c.teacherId !== targetId && c.teacherId !== targetCode);
-
+    const nextCells = cells.map((c) => (c.teacherId === teacherId ? { ...c, teacherId: '' } : c));
     setTeachers(nextTeachers);
-    setClasses(nextClasses);
     setAssignments(nextAssignments);
     setCells(nextCells);
-
-    await syncToFirestore({
-      teachers: nextTeachers,
-      classes: nextClasses,
-      assignments: nextAssignments,
-      cells: nextCells,
-    }, "DELETE_TEACHER");
+    await syncToFirestore(
+      {
+        teachers: nextTeachers,
+        assignments: nextAssignments,
+        cells: nextCells,
+      },
+      'DELETE_TEACHER'
+    );
   };
 
   const handleBatchSetTeachers = async (newTeachers: Teacher[]) => {
     const normList = newTeachers.map((t) => normalizeTeacher(t));
     setTeachers(normList);
-    await syncToFirestore({ teachers: normList }, "BATCH_SET_TEACHERS");
+    await syncToFirestore({ teachers: normList }, 'BATCH_SET_TEACHERS');
   };
 
   // Handlers for Classes
   const handleAddClass = async (newClass: ClassItem) => {
     const next = [...classes, newClass];
     setClasses(next);
-    await syncToFirestore({ classes: next }, "ADD_CLASS");
+    await syncToFirestore({ classes: next }, 'ADD_CLASS');
   };
 
   const handleUpdateClass = async (updatedClass: ClassItem) => {
     const next = classes.map((c) => (c.id === updatedClass.id ? updatedClass : c));
     setClasses(next);
-    await syncToFirestore({ classes: next }, "UPDATE_CLASS");
+    await syncToFirestore({ classes: next }, 'UPDATE_CLASS');
   };
 
-  const handleDeleteClass = async (id: string) => {
-    const nextClasses = classes.filter((c) => c.id !== id);
-    const nextTeachers = teachers.map((t) => (t.homeroomClassId === id ? normalizeTeacher({ ...t, homeroomClassId: '' }) : t));
+  const handleDeleteClass = async (classId: string) => {
+    const nextClasses = classes.filter((c) => c.id !== classId);
+    const nextAssignments = assignments.filter((a) => a.classId !== classId);
+    const nextCells = cells.filter((c) => c.classId !== classId);
     setClasses(nextClasses);
-    setTeachers(nextTeachers);
-    await syncToFirestore({ classes: nextClasses, teachers: nextTeachers }, "DELETE_CLASS");
+    setAssignments(nextAssignments);
+    setCells(nextCells);
+    await syncToFirestore(
+      {
+        classes: nextClasses,
+        assignments: nextAssignments,
+        cells: nextCells,
+      },
+      'DELETE_CLASS'
+    );
   };
 
   // Handlers for Subjects
   const handleAddSubject = async (newSubject: Subject) => {
     const next = [...subjects, newSubject];
     setSubjects(next);
-    await syncToFirestore({ subjects: next }, "ADD_SUBJECT");
+    await syncToFirestore({ subjects: next }, 'ADD_SUBJECT');
   };
 
   const handleUpdateSubject = async (updatedSubject: Subject) => {
     const next = subjects.map((s) => (s.id === updatedSubject.id ? updatedSubject : s));
     setSubjects(next);
-    await syncToFirestore({ subjects: next }, "UPDATE_SUBJECT");
+    await syncToFirestore({ subjects: next }, 'UPDATE_SUBJECT');
   };
 
-  const handleDeleteSubject = async (id: string) => {
-    if (confirm('Bạn có chắc chắn muốn xóa môn học này?')) {
-      const nextSubjects = subjects.filter((s) => s.id !== id);
-      const nextAssignments = assignments.filter((a) => a.subjectId !== id);
-      const nextCells = cells.filter((c) => c.subjectId !== id);
-      setSubjects(nextSubjects);
-      setAssignments(nextAssignments);
-      setCells(nextCells);
-      await syncToFirestore({ subjects: nextSubjects, assignments: nextAssignments, cells: nextCells }, "DELETE_SUBJECT");
-    }
+  const handleDeleteSubject = async (subjectId: string) => {
+    const nextSubjects = subjects.filter((s) => s.id !== subjectId);
+    const nextAssignments = assignments.filter((a) => a.subjectId !== subjectId);
+    const nextCells = cells.filter((c) => c.subjectId !== subjectId);
+    setSubjects(nextSubjects);
+    setAssignments(nextAssignments);
+    setCells(nextCells);
+    await syncToFirestore(
+      {
+        subjects: nextSubjects,
+        assignments: nextAssignments,
+        cells: nextCells,
+      },
+      'DELETE_SUBJECT'
+    );
   };
 
   // Handlers for Assignments
   const handleAddAssignment = async (newAssignment: Assignment) => {
     const next = [...assignments, newAssignment];
     setAssignments(next);
-    await syncToFirestore({ assignments: next }, "ADD_ASSIGNMENT");
+    await syncToFirestore({ assignments: next }, 'ADD_ASSIGNMENT');
   };
 
   const handleUpdateAssignment = async (updatedAssignment: Assignment) => {
     const next = assignments.map((a) => (a.id === updatedAssignment.id ? updatedAssignment : a));
     setAssignments(next);
-    await syncToFirestore({ assignments: next }, "UPDATE_ASSIGNMENT");
+    await syncToFirestore({ assignments: next }, 'UPDATE_ASSIGNMENT');
   };
 
-  const handleDeleteAssignment = async (id: string) => {
-    const nextAssignments = assignments.filter((a) => a.id !== id);
-    const nextCells = cells.filter((c) => c.assignmentId !== id);
-    setAssignments(nextAssignments);
-    setCells(nextCells);
-    await syncToFirestore({ assignments: nextAssignments, cells: nextCells }, "DELETE_ASSIGNMENT");
+  const handleDeleteAssignment = async (assignmentId: string) => {
+    const next = assignments.filter((a) => a.id !== assignmentId);
+    setAssignments(next);
+    await syncToFirestore({ assignments: next }, 'DELETE_ASSIGNMENT');
   };
 
   const handleBatchSetAssignments = async (newAssignments: Assignment[]) => {
     setAssignments(newAssignments);
-    await syncToFirestore({ assignments: newAssignments }, "BATCH_SET_ASSIGNMENTS");
+    await syncToFirestore({ assignments: newAssignments }, 'BATCH_SET_ASSIGNMENTS');
   };
 
-  // Handlers for Versioning
+  // Version Control Handlers
   const handleSaveQuickVersion = async (
     name?: string,
     type: 'draft' | 'editing' | 'official' = 'editing',
     notes?: string
   ) => {
-    const vName = name || `TKB – ${new Date().toLocaleDateString('vi-VN')} – Bản ${versions.length + 1}`;
+    const now = new Date();
+    const versionName =
+      name ||
+      `Bản lưu ${now.toLocaleDateString('vi-VN')} ${now.toLocaleTimeString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`;
+
     const newVersion: ScheduleVersion = {
-      id: `v_${Date.now()}`,
-      name: vName,
+      id: `ver_${Date.now()}`,
+      name: versionName,
+      timestamp: now.toISOString(),
       type,
-      timestamp: new Date().toLocaleString('vi-VN'),
-      cells: [...cells],
-      notes,
+      notes: notes || `Phiên bản TKB trường ${activeSchoolId}`,
+      cells: JSON.parse(JSON.stringify(cells)),
     };
+
+
     const nextVersions = [newVersion, ...versions];
     setVersions(nextVersions);
 
-    if (user) {
+    if (user && activeSchoolId) {
       try {
-        await syncToFirestore({ versions: nextVersions }, "SAVE_QUICK_VERSION");
-        console.log(`[FIRESTORE] WRITE SUCCESS: TimetableVersion ${newVersion.id} saved to Firestore.`);
-      } catch (err) {
-        console.error("[FIRESTORE] WRITE ERROR for TimetableVersion:", err);
-        alert(`⚠️ Lỗi ghi TimetableVersion vào Firestore: ${err instanceof Error ? err.message : String(err)}`);
+        await saveSchoolVersion(activeSchoolId, newVersion);
+        await syncToFirestore({ versions: nextVersions }, 'SAVE_QUICK_VERSION');
+        alert(`✅ Đã lưu phiên bản TKB "${newVersion.name}" thành công.`);
+      } catch (err: any) {
+        console.error('[FIRESTORE] WRITE ERROR for TimetableVersion:', err);
+        alert(`⚠️ Lỗi ghi TimetableVersion: ${err?.message || String(err)}`);
       }
-    } else {
-      console.warn("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng.");
-      alert("⚠️ Dữ liệu đã lưu tạm ở LocalStorage. Hãy 'Đăng nhập Google' ở thanh trên để lưu vào Firebase Firestore.");
     }
   };
 
   const handleRestoreVersion = async (ver: ScheduleVersion) => {
     setCells(ver.cells);
-    await syncToFirestore({ cells: ver.cells }, "RESTORE_VERSION");
+    await syncToFirestore({ cells: ver.cells }, 'RESTORE_VERSION');
     alert(`Đã khôi phục thành công bản TKB: ${ver.name}`);
   };
 
   const handleDeleteVersion = async (versionId: string) => {
     const nextVersions = versions.filter((v) => v.id !== versionId);
     setVersions(nextVersions);
-    if (user) {
-      await syncToFirestore({ versions: nextVersions }, "DELETE_VERSION");
+    if (user && activeSchoolId) {
+      await deleteSchoolVersion(activeSchoolId, versionId);
+      await syncToFirestore({ versions: nextVersions }, 'DELETE_VERSION');
     }
   };
 
@@ -454,15 +533,18 @@ export default function App() {
     setCells(sc);
     setVersions(v);
 
-    await syncToFirestore({
-      teachers: t,
-      classes: c,
-      subjects: s,
-      assignments: a,
-      timeConfig: tc,
-      cells: sc,
-      versions: v,
-    }, "RESET_SAMPLE_DATA");
+    await syncToFirestore(
+      {
+        teachers: t,
+        classes: c,
+        subjects: s,
+        assignments: a,
+        timeConfig: tc,
+        cells: sc,
+        versions: v,
+      },
+      'RESET_SAMPLE_DATA'
+    );
   };
 
   // Google Login Handler
@@ -471,21 +553,25 @@ export default function App() {
     setLoginError(null);
     activeRequestIdRef.current += 1;
     setSyncError(null);
-    loadedUidRef.current = null;
-    isSeedingRef.current = false;
+    loadedSchoolIdRef.current = null;
     try {
       const loggedInUser = await loginWithGoogle();
       if (loggedInUser) {
         setUser(loggedInUser);
-        console.log("[FIREBASE AUTH] Google Login Success:", loggedInUser.email, loggedInUser.uid);
+        const profile = await syncUserProfile(loggedInUser);
+        setUserProfile(profile);
+        if (profile?.schoolId) {
+          setActiveSchoolId(profile.schoolId);
+        }
       }
     } catch (error: any) {
-      console.error("[FIREBASE AUTH] Google Login Failed:", error);
-      let errMsg = "Đăng nhập Google thất bại.";
+      console.error('[FIREBASE AUTH] Google Login Failed:', error);
+      let errMsg = 'Đăng nhập Google thất bại.';
       if (error?.code === 'auth/operation-not-allowed') {
-        errMsg = "Google provider chưa được Enable trong Firebase Console (Authentication -> Sign-in method -> Google).";
+        errMsg =
+          'Google provider chưa được Enable trong Firebase Console (Authentication -> Sign-in method -> Google).';
       } else if (error?.code === 'auth/popup-closed-by-user') {
-        errMsg = "Cửa sổ đăng nhập Google đã bị đóng trước khi hoàn tất.";
+        errMsg = 'Cửa sổ đăng nhập Google đã bị đóng trước khi hoàn tất.';
       } else if (error?.message) {
         errMsg = error.message;
       }
@@ -499,11 +585,18 @@ export default function App() {
   const handleLogout = async () => {
     await logoutFirebase();
     setUser(null);
+    setUserProfile(null);
     activeRequestIdRef.current += 1;
     setSyncError(null);
     setLoginError(null);
-    loadedUidRef.current = null;
-    isSeedingRef.current = false;
+    loadedSchoolIdRef.current = null;
+  };
+
+  // Handle Switch School (Admin Only)
+  const handleSwitchSchool = (newSchoolId: string) => {
+    if (newSchoolId === activeSchoolId) return;
+    loadedSchoolIdRef.current = null;
+    setActiveSchoolId(newSchoolId);
   };
 
   // 1. Loading screen while initializing auth
@@ -515,7 +608,7 @@ export default function App() {
         </div>
         <div className="flex items-center gap-3 text-slate-300 font-semibold text-sm bg-slate-900/80 px-4 py-2.5 rounded-full border border-slate-800">
           <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
-          <span>Đang xác thực tài khoản...</span>
+          <span>Đang xác thực tài khoản & phân quyền...</span>
         </div>
       </div>
     );
@@ -533,6 +626,38 @@ export default function App() {
     );
   }
 
+  // 3. User is Pending Approval
+  if (userProfile && userProfile.status === 'pending') {
+    return (
+      <PendingApprovalView
+        userProfile={userProfile}
+        onLogout={handleLogout}
+        onRefresh={refreshProfile}
+      />
+    );
+  }
+
+  // 4. User is Disabled
+  if (userProfile && userProfile.status === 'disabled') {
+    return (
+      <DisabledAccountView
+        userProfile={userProfile}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  const currentSchool =
+    schools.find((s) => s.id === activeSchoolId) ||
+    (userProfile?.schoolId
+      ? {
+          id: userProfile.schoolId,
+          name: userProfile.schoolName || userProfile.schoolId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+      : null);
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-900 antialiased selection:bg-blue-500 selection:text-white">
       {/* Header */}
@@ -540,6 +665,9 @@ export default function App() {
         timeConfig={timeConfig}
         stats={stats}
         user={user}
+        userProfile={userProfile}
+        currentSchool={currentSchool}
+        schoolsList={schools}
         isSyncing={isSyncing}
         syncError={syncError}
         isLoggingIn={isLoggingIn}
@@ -548,6 +676,7 @@ export default function App() {
         onSaveQuickVersion={() => handleSaveQuickVersion()}
         onLoginGoogle={handleGoogleLogin}
         onLogout={handleLogout}
+        onSwitchSchool={handleSwitchSchool}
       />
 
       {/* Main Body Layout */}
@@ -558,6 +687,7 @@ export default function App() {
           setActiveTab={handleTabChange}
           errorCount={stats.criticalErrorCount}
           warningCount={stats.warningCount}
+          userProfile={userProfile}
         />
 
         {/* Content View Page */}
@@ -633,7 +763,7 @@ export default function App() {
               timeConfig={timeConfig}
               onUpdateCells={async (newCells) => {
                 setCells(newCells);
-                await syncToFirestore({ cells: newCells }, "UPDATE_CELLS");
+                await syncToFirestore({ cells: newCells }, 'UPDATE_CELLS');
               }}
               onHasUnsavedChangesChange={setHasUnsavedScheduleChanges}
             />
@@ -669,12 +799,28 @@ export default function App() {
               currentCells={cells}
               onUpdateTimeConfig={async (newConfig) => {
                 setTimeConfig(newConfig);
-                await syncToFirestore({ timeConfig: newConfig }, "UPDATE_TIME_CONFIG");
+                await syncToFirestore({ timeConfig: newConfig }, 'UPDATE_TIME_CONFIG');
               }}
               onSaveVersion={(name, type, notes) => handleSaveQuickVersion(name, type, notes)}
               onRestoreVersion={handleRestoreVersion}
               onDeleteVersion={handleDeleteVersion}
               onResetSampleData={handleResetSampleData}
+            />
+          )}
+
+          {/* Admin: User Management */}
+          {activeTab === 'users' && userProfile?.role === 'admin' && (
+            <UserManagementView currentUserProfile={userProfile} />
+          )}
+
+          {/* Admin: School Management */}
+          {activeTab === 'schools' && userProfile?.role === 'admin' && (
+            <SchoolManagementView
+              currentSchoolId={activeSchoolId}
+              onSelectActiveSchool={(schoolId) => {
+                handleSwitchSchool(schoolId);
+                setActiveTab('overview');
+              }}
             />
           )}
         </main>

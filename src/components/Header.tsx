@@ -13,14 +13,19 @@ import {
   Info,
   X,
   Check,
+  Building2,
+  ShieldCheck,
 } from 'lucide-react';
-import { TimeConfig, ScheduleStats } from '../types';
+import { TimeConfig, ScheduleStats, UserProfile, School } from '../types';
 import { User } from 'firebase/auth';
 
 interface HeaderProps {
   timeConfig: TimeConfig;
   stats: ScheduleStats;
   user: User | null;
+  userProfile?: UserProfile | null;
+  currentSchool?: School | null;
+  schoolsList?: School[];
   isSyncing: boolean;
   syncError?: string | null;
   isLoggingIn?: boolean;
@@ -29,12 +34,16 @@ interface HeaderProps {
   onSaveQuickVersion: () => void;
   onLoginGoogle: () => void;
   onLogout: () => void;
+  onSwitchSchool?: (schoolId: string) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   timeConfig,
   stats,
   user,
+  userProfile,
+  currentSchool,
+  schoolsList = [],
   isSyncing,
   syncError,
   isLoggingIn = false,
@@ -43,13 +52,15 @@ export const Header: React.FC<HeaderProps> = ({
   onSaveQuickVersion,
   onLoginGoogle,
   onLogout,
+  onSwitchSchool,
 }) => {
   const [showUserInfoModal, setShowUserInfoModal] = useState<boolean>(false);
+  const isAdmin = userProfile?.role === 'admin';
 
   useEffect(() => {
-    console.log("[HEADER FIRESTORE STATE]", {
+    console.log('[HEADER FIRESTORE STATE]', {
       syncError,
-      syncStatus: isSyncing ? "SYNCING" : syncError ? "ERROR" : "SYNCED"
+      syncStatus: isSyncing ? 'SYNCING' : syncError ? 'ERROR' : 'SYNCED',
     });
   }, [syncError, isSyncing]);
 
@@ -63,7 +74,9 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="font-extrabold text-lg tracking-tight text-white">THỜI KHÓA BIỂU TIỂU HỌC</h1>
+              <h1 className="font-extrabold text-lg tracking-tight text-white">
+                THỜI KHÓA BIỂU TIỂU HỌC
+              </h1>
               <span className="text-xs bg-blue-500/20 text-blue-300 font-medium px-2 py-0.5 rounded border border-blue-400/30">
                 v1.0
               </span>
@@ -72,8 +85,39 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* School Year & Semester Badge & Sync Status */}
+        {/* School Year, Tenant / School info & Sync Status */}
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* School Tenant Badge */}
+          {user && currentSchool && (
+            <div className="flex items-center gap-2 bg-slate-800/90 px-3 py-1.5 rounded-xl border border-slate-700/80 text-xs">
+              <Building2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              {isAdmin && schoolsList.length > 1 && onSwitchSchool ? (
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-400 font-medium hidden sm:inline">Trường:</span>
+                  <select
+                    value={currentSchool.id}
+                    onChange={(e) => onSwitchSchool(e.target.value)}
+                    className="bg-slate-900 text-blue-300 font-bold border border-slate-700 rounded-lg px-2 py-0.5 text-xs focus:outline-hidden cursor-pointer"
+                  >
+                    {schoolsList.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 max-w-[200px] truncate">
+                  <span className="text-slate-400 font-medium">Trường:</span>
+                  <span className="text-blue-300 font-bold truncate" title={currentSchool.name}>
+                    {currentSchool.name}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* School Year & Semester Badge */}
           <div className="flex items-center gap-3 bg-slate-800/90 px-3.5 py-1.5 rounded-xl border border-slate-700/80 text-xs">
             <div className="text-slate-300 font-medium">
               Năm học: <span className="text-blue-400 font-bold">{timeConfig.schoolYear}</span>
@@ -90,7 +134,7 @@ export const Header: React.FC<HeaderProps> = ({
               isSyncing ? (
                 <span className="flex items-center gap-1.5 text-amber-400 animate-pulse">
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>🔄 Đang đồng bộ...</span>
+                  <span>🔄 Đang lưu Firestore...</span>
                 </span>
               ) : syncError ? (
                 <span className="flex items-center gap-1.5 text-rose-400" title={syncError}>
@@ -98,13 +142,19 @@ export const Header: React.FC<HeaderProps> = ({
                   <span>🔴 Firestore lỗi: {syncError}</span>
                 </span>
               ) : (
-                <span className="flex items-center gap-1.5 text-emerald-400" title={`UID: ${user.uid}`}>
+                <span
+                  className="flex items-center gap-1.5 text-emerald-400"
+                  title={`Mã trường: ${currentSchool?.id || 'N/A'}`}
+                >
                   <CloudCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>🟢 Firestore đã đồng bộ</span>
+                  <span>🟢 Đã đồng bộ Firestore</span>
                 </span>
               )
             ) : (
-              <span className="flex items-center gap-1.5 text-amber-300" title="Cần đăng nhập Google để lưu Firestore">
+              <span
+                className="flex items-center gap-1.5 text-amber-300"
+                title="Cần đăng nhập Google để lưu Firestore"
+              >
                 <CloudOff className="w-3.5 h-3.5 text-amber-400" />
                 <span>🔐 Chưa đăng nhập</span>
               </span>
@@ -122,27 +172,40 @@ export const Header: React.FC<HeaderProps> = ({
                 <img
                   src={user.photoURL}
                   alt="User Avatar"
-                  className="w-6 h-6 rounded-full border border-blue-400 object-cover"
+                  className="w-6 h-6 rounded-full border border-blue-400 object-cover shrink-0"
                   referrerPolicy="no-referrer"
                 />
               ) : (
-                <div className="w-6 h-6 rounded-full bg-blue-600/80 text-white flex items-center justify-center font-bold text-[10px]">
+                <div className="w-6 h-6 rounded-full bg-blue-600/80 text-white flex items-center justify-center font-bold text-[10px] shrink-0">
                   {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
                 </div>
               )}
 
               <div className="flex flex-col text-left">
-                <span className="font-bold text-white max-w-[110px] truncate leading-tight">
-                  {user.displayName || user.email?.split('@')[0] || 'Tài khoản Google'}
+                <div className="flex items-center gap-1">
+                  <span className="font-bold text-white max-w-[100px] truncate leading-tight">
+                    {user.displayName || user.email?.split('@')[0] || 'Tài khoản Google'}
+                  </span>
+                  {isAdmin ? (
+                    <span className="text-[9px] bg-purple-500/30 text-purple-300 font-bold px-1.5 py-0.2 rounded border border-purple-400/30">
+                      Admin
+                    </span>
+                  ) : (
+                    <span className="text-[9px] bg-blue-500/30 text-blue-300 font-bold px-1.5 py-0.2 rounded border border-blue-400/30">
+                      Cán bộ
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] text-emerald-400 font-medium leading-tight">
+                  🟢 Đã đăng nhập
                 </span>
-                <span className="text-[10px] text-emerald-400 font-medium leading-tight">🟢 Đã đăng nhập</span>
               </div>
 
               {/* User info button */}
               <button
                 onClick={() => setShowUserInfoModal(true)}
-                className="text-slate-300 hover:text-blue-400 p-1 rounded-lg hover:bg-slate-700 transition-colors ml-1"
-                title="👤 Thông tin tài khoản"
+                className="text-slate-300 hover:text-blue-400 p-1 rounded-lg hover:bg-slate-700 transition-colors ml-1 cursor-pointer"
+                title="👤 Thông tin tài khoản & Phân quyền"
               >
                 <Info className="w-3.5 h-3.5" />
               </button>
@@ -150,7 +213,7 @@ export const Header: React.FC<HeaderProps> = ({
               {/* Logout button */}
               <button
                 onClick={onLogout}
-                className="text-slate-300 hover:text-red-400 p-1 rounded-lg hover:bg-slate-700 transition-colors"
+                className="text-slate-300 hover:text-red-400 p-1 rounded-lg hover:bg-slate-700 transition-colors cursor-pointer"
                 title="🚪 Đăng xuất"
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -163,9 +226,9 @@ export const Header: React.FC<HeaderProps> = ({
               className={`flex items-center gap-1.5 font-bold px-3.5 py-1.5 rounded-xl text-xs shadow-md transition-all active:scale-95 ${
                 isLoggingIn
                   ? 'bg-amber-600 text-white cursor-wait opacity-90'
-                  : 'bg-blue-600 hover:bg-blue-500 text-white ring-2 ring-blue-400/50'
+                  : 'bg-blue-600 hover:bg-blue-500 text-white ring-2 ring-blue-400/50 cursor-pointer'
               }`}
-              title="Đăng nhập tài khoản Google để tự động lưu dữ liệu vào Firebase Firestore"
+              title="Đăng nhập tài khoản Google"
             >
               {isLoggingIn ? (
                 <>
@@ -184,8 +247,8 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Error / Warning Badges */}
           <button
             onClick={onNavigateToAudit}
-            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-xl border border-slate-700 transition-colors text-xs"
-            title="Bấm để xem danh sách lỗi kiểm tra"
+            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-xl border border-slate-700 transition-colors text-xs cursor-pointer"
+            title="Bấm để xem danh sách lỗi kiểm tra"
           >
             {stats.criticalErrorCount > 0 ? (
               <span className="flex items-center gap-1 font-bold text-red-400 bg-red-950/80 px-2 py-0.5 rounded-lg border border-red-800/80">
@@ -209,8 +272,8 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Quick Save version button */}
           <button
             onClick={onSaveQuickVersion}
-            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3.5 py-1.5 rounded-xl text-xs shadow-md transition-all active:scale-95"
-            title="Lưu phiên bản TKB vào Firestore"
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3.5 py-1.5 rounded-xl text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+            title="Lưu phiên bản TKB vào Firestore của trường"
           >
             <Save className="w-3.5 h-3.5" />
             <span>Lưu phiên bản</span>
@@ -232,10 +295,10 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Account Info Modal */}
       {showUserInfoModal && user && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 text-slate-800 space-y-4 relative">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full p-6 text-slate-800 space-y-4 relative">
             <button
               onClick={() => setShowUserInfoModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -261,24 +324,76 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
 
-            <div className="space-y-2 text-xs">
+            <div className="space-y-2.5 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-0.5">
+                  <div className="text-slate-400 font-bold uppercase text-[9px]">
+                    Vai trò hệ thống
+                  </div>
+                  <div className="font-bold text-slate-800 flex items-center gap-1">
+                    {userProfile?.role === 'admin' ? (
+                      <>
+                        <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
+                        <span className="text-purple-700">Admin Hệ thống</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserIcon className="w-3.5 h-3.5 text-blue-600" />
+                        <span className="text-blue-700">Cán bộ Quản lý</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-0.5">
+                  <div className="text-slate-400 font-bold uppercase text-[9px]">Trạng thái</div>
+                  <div className="font-bold text-emerald-700 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span>
+                      {userProfile?.status === 'active'
+                        ? 'Đang hoạt động'
+                        : userProfile?.status || 'Active'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* School Assignment Info */}
+              <div className="bg-blue-50/60 p-3 rounded-xl border border-blue-200/80 space-y-1">
+                <div className="text-blue-600 font-bold uppercase text-[10px] flex items-center gap-1">
+                  <Building2 className="w-3 h-3" />
+                  <span>Trường phân quyền (Multi-Tenant):</span>
+                </div>
+                <div className="font-bold text-slate-900 text-sm">
+                  {currentSchool?.name || userProfile?.schoolName || 'Chưa xác định'}
+                </div>
+                <div className="font-mono text-[11px] text-blue-700">
+                  Mã trường (schoolId):{' '}
+                  <strong>{currentSchool?.id || userProfile?.schoolId || 'N/A'}</strong>
+                </div>
+              </div>
+
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
-                <div className="text-slate-500 font-semibold uppercase text-[10px]">Mã định danh User (UID):</div>
-                <div className="font-mono bg-white p-2 rounded border border-slate-200 text-slate-800 break-all select-all font-bold">
+                <div className="text-slate-500 font-semibold uppercase text-[10px]">
+                  Mã định danh User (UID):
+                </div>
+                <div className="font-mono bg-white p-2 rounded border border-slate-200 text-slate-800 break-all select-all font-bold text-[11px]">
                   {user.uid}
                 </div>
               </div>
 
               <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-emerald-900 flex items-center gap-2">
                 <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Mọi dữ liệu TKB, Giáo viên, Phân công được lưu riêng biệt theo UID này trên Firebase Firestore.</span>
+                <span>
+                  Toàn bộ dữ liệu TKB được cô lập bảo mật theo mã trường trên Firebase Firestore.
+                </span>
               </div>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 onClick={() => setShowUserInfoModal(false)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 font-bold text-xs text-slate-700 transition-all"
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 font-bold text-xs text-slate-700 transition-all cursor-pointer"
               >
                 Đóng
               </button>
@@ -287,7 +402,7 @@ export const Header: React.FC<HeaderProps> = ({
                   setShowUserInfoModal(false);
                   onLogout();
                 }}
-                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 font-bold text-xs text-white transition-all flex items-center gap-1.5"
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 font-bold text-xs text-white transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>Đăng xuất</span>

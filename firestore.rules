@@ -3,26 +3,103 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Allow users to read and write their own timetable_data documents
-    match /timetable_data/{docId} {
-      allow read, write: if request.auth != null && (
-        docId == request.auth.uid ||
-        docId.matches('^' + request.auth.uid + '.*')
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSystemAdmin() {
+      return isAuthenticated() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active') ||
+        (request.auth.token.email == 'tram.ai.ctst@gmail.com')
       );
     }
 
-    // Allow users to read and write their own teachers documents and subcollections
-    match /teachers/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    function isActiveManager() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager' && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+    }
 
+    function isManagerOfSchool(schoolId) {
+      return isActiveManager() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.schoolId == schoolId;
+    }
+
+    // 1. User Profiles Collection: users/{userId}
+    match /users/{userId} {
+      // User can read their own profile, Admin can read all user profiles
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isSystemAdmin());
+      
+      // User can create their initial profile (defaulting to manager/pending, or admin for owner email)
+      allow create: if isAuthenticated() && request.auth.uid == userId && (
+        (request.resource.data.role == 'manager' && request.resource.data.status == 'pending') ||
+        (request.auth.token.email == 'tram.ai.ctst@gmail.com' && request.resource.data.role == 'admin')
+      );
+
+      // User can only update their own non-permission fields (displayName, photoURL, updatedAt)
+      // Only Admin can update role, status, schoolId
+      allow update: if isAuthenticated() && (
+        isSystemAdmin() || (
+          request.auth.uid == userId &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.status == resource.data.status &&
+          request.resource.data.schoolId == resource.data.schoolId
+        )
+      );
+
+      // Only Admin can delete user profiles
+      allow delete: if isSystemAdmin();
+    }
+
+    // 2. Schools Collection: schools/{schoolId}
+    match /schools/{schoolId} {
+      // Admin can manage all schools. Manager can read their own school info.
+      allow read: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
+      allow write: if isSystemAdmin();
+
+      // Timetable data subcollection: schools/{schoolId}/timetable_data/{docId}
+      match /timetable_data/{docId} {
+        allow read, write: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
+      }
+
+      // Versions subcollection: schools/{schoolId}/versions/{versionId}
+      match /versions/{versionId} {
+        allow read, write: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
+      }
+
+      // Any other subcollections under school
       match /{allSubcollections=**} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
       }
     }
 
-    // Allow users to read and write their own weeklySchedules documents
+    // 3. Legacy compatibility paths for individual users
+    match /timetable_data/{docId} {
+      allow read, write: if isAuthenticated() && (
+        docId == request.auth.uid ||
+        docId.matches('^' + request.auth.uid + '.*') ||
+        isSystemAdmin()
+      );
+    }
+
+    match /teachers/{userId} {
+      allow read, write: if isAuthenticated() && (request.auth.uid == userId || isSystemAdmin());
+
+      match /{allSubcollections=**} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isSystemAdmin());
+      }
+    }
+
     match /weeklySchedules/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isAuthenticated() && (request.auth.uid == userId || isSystemAdmin());
     }
 
     // Default deny

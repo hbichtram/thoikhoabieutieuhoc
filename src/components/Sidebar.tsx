@@ -9,7 +9,11 @@ import {
   AlertTriangle,
   BarChart3,
   Settings,
+  ShieldCheck,
+  Building2,
+  Users,
 } from 'lucide-react';
+import { UserProfile } from '../types';
 
 export type TabType =
   | 'overview'
@@ -20,13 +24,16 @@ export type TabType =
   | 'timetable'
   | 'audit'
   | 'reports'
-  | 'settings';
+  | 'settings'
+  | 'users'
+  | 'schools';
 
 interface SidebarProps {
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
   errorCount: number;
   warningCount: number;
+  userProfile?: UserProfile | null;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -34,7 +41,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setActiveTab,
   errorCount,
   warningCount,
+  userProfile,
 }) => {
+  const isAdmin = userProfile?.role === 'admin';
+
   const menuItems = [
     { id: 'overview', label: 'Tổng quan', icon: Home },
     { id: 'teachers', label: 'Giáo viên', icon: UserCheck },
@@ -53,50 +63,88 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'settings', label: 'Cài đặt', icon: Settings },
   ];
 
+  const adminMenuItems = [
+    { id: 'users', label: 'Cán bộ & Phân quyền', icon: ShieldCheck },
+    { id: 'schools', label: 'Quản lý Trường học', icon: Building2 },
+  ];
+
   return (
     <aside className="print:hidden w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0 min-h-[calc(100vh-61px)] text-slate-300">
-      <div className="p-4 space-y-1">
-        <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-          Chức năng chính
+      <div className="p-4 space-y-3">
+        {/* Main Functions */}
+        <div className="space-y-1">
+          <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            Nghiệp vụ trường
+          </div>
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id as TabType)}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 cursor-pointer ${
+                  isActive
+                    ? 'bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/20'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                  <span>{item.label}</span>
+                </div>
+
+                {item.badge && !isActive && (
+                  <span className="text-[10px] bg-blue-500/20 text-blue-300 font-bold px-1.5 py-0.5 rounded border border-blue-400/20">
+                    {item.badge}
+                  </span>
+                )}
+
+                {item.count !== undefined && item.count > 0 && (
+                  <span
+                    className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                      item.hasError
+                        ? 'bg-red-500 text-white'
+                        : 'bg-amber-500 text-slate-900'
+                    }`}
+                  >
+                    {item.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
-        {menuItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id as TabType)}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${
-                isActive
-                  ? 'bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/20'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                <span>{item.label}</span>
-              </div>
 
-              {item.badge && !isActive && (
-                <span className="text-[10px] bg-blue-500/20 text-blue-300 font-bold px-1.5 py-0.5 rounded border border-blue-400/20">
-                  {item.badge}
-                </span>
-              )}
-
-              {item.count !== undefined && item.count > 0 && (
-                <span
-                  className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                    item.hasError
-                      ? 'bg-red-500 text-white'
-                      : 'bg-amber-500 text-slate-900'
+        {/* Admin System Management section */}
+        {isAdmin && (
+          <div className="space-y-1 pt-2 border-t border-slate-800/80">
+            <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Quản trị Hệ thống</span>
+            </div>
+            {adminMenuItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id as TabType)}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 cursor-pointer ${
+                    isActive
+                      ? 'bg-purple-600 text-white font-semibold shadow-md shadow-purple-600/25'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                   }`}
                 >
-                  {item.count}
-                </span>
-              )}
-            </button>
-          );
-        })}
+                  <div className="flex items-center gap-3">
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-purple-400'}`} />
+                    <span>{item.label}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Footer Info */}

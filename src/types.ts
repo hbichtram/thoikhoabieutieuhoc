@@ -147,3 +147,43 @@ export interface ScheduleStats {
   warnings?: ConflictIssue[];
 }
 
+// User Roles & Permissions
+export type UserRole = 'admin' | 'manager';
+export type UserStatus = 'pending' | 'active' | 'disabled';
+
+export interface UserSummary {
+  uid: string;
+  displayName: string | null;
+  email: string | null;
+}
+
+export interface UserProfile {
+  uid: string;
+  displayName: string | null;
+  email: string | null;
+  photoURL?: string | null;
+  role: UserRole;
+  status: UserStatus;
+  schoolId: string | null;
+  schoolName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// School Entity
+export interface School {
+  id: string; // e.g. "school_001", "th_nguyendu"
+  name: string; // e.g. "Trường Tiểu học Nguyễn Du"
+  code: string; // e.g. "THND"
+  address?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SchoolTimetableDoc {
+  schoolId: string;
+  payload: string;
+  updatedAt: string;
+  lastUpdatedBy?: UserSummary | null;
+}
+
