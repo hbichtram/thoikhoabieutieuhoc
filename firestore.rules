@@ -10,25 +10,19 @@ service cloud.firestore {
 
     // Direct, independent identification of System Admin by UID or Email
     // Does NOT depend on users/{uid} document existing!
-    function isHardcodedAdmin() {
+    function isSystemAdmin() {
       return isAuthenticated() && (
         request.auth.uid == 'CDDP2wg0tWb1E01arXBouCfd4ZP2' ||
-        (request.auth.token.email != null && (
+        ('email' in request.auth.token && (
           request.auth.token.email == 'tram.ai.ctst@gmail.com' ||
           request.auth.token.email.lower() == 'tram.ai.ctst@gmail.com'
-        ))
+        )) ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active'
+        )
       );
-    }
-
-    function isDbAdmin() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
-    }
-
-    function isSystemAdmin() {
-      return isHardcodedAdmin() || isDbAdmin();
     }
 
     function isActiveManager() {
@@ -45,8 +39,8 @@ service cloud.firestore {
 
     // 1. User Profiles Collection: users/{userId}
     match /users/{userId} {
-      // System Admin has full read and write permissions (create, read, update, delete)
-      allow read, write: if isSystemAdmin();
+      // System Admin has full permissions (create, read, update, delete)
+      allow read, create, update, delete: if isSystemAdmin();
 
       // Regular user can read their own profile
       allow read: if isAuthenticated() && request.auth.uid == userId;
@@ -63,8 +57,8 @@ service cloud.firestore {
 
     // 2. Schools Collection: schools/{schoolId}
     match /schools/{schoolId} {
-      // System Admin has full read and write permissions (create, read, update, delete)
-      allow read, write: if isSystemAdmin();
+      // System Admin has full permissions (create, read, update, delete)
+      allow read, create, update, delete: if isSystemAdmin();
 
       // Active Manager of this school can read their own school
       allow read: if isManagerOfSchool(schoolId);
@@ -74,38 +68,38 @@ service cloud.firestore {
 
       // Timetable data subcollection: schools/{schoolId}/timetable_data/{docId}
       match /timetable_data/{docId} {
-        allow read, write: if isSystemAdmin() || isManagerOfSchool(schoolId);
+        allow read, create, update, delete: if isSystemAdmin() || isManagerOfSchool(schoolId);
       }
 
       // Versions subcollection: schools/{schoolId}/versions/{versionId}
       match /versions/{versionId} {
-        allow read, write: if isSystemAdmin() || isManagerOfSchool(schoolId);
+        allow read, create, update, delete: if isSystemAdmin() || isManagerOfSchool(schoolId);
       }
 
       // Any other subcollections under school
       match /{allSubcollections=**} {
-        allow read, write: if isSystemAdmin() || isManagerOfSchool(schoolId);
+        allow read, create, update, delete: if isSystemAdmin() || isManagerOfSchool(schoolId);
       }
     }
 
     // 3. Legacy compatibility paths for individual users
     match /timetable_data/{docId} {
-      allow read, write: if isAuthenticated() && (
+      allow read, create, update, delete: if isAuthenticated() && (
         docId == request.auth.uid ||
         isSystemAdmin()
       );
     }
 
     match /teachers/{userId} {
-      allow read, write: if isAuthenticated() && (request.auth.uid == userId || isSystemAdmin());
+      allow read, create, update, delete: if isAuthenticated() && (request.auth.uid == userId || isSystemAdmin());
 
       match /{allSubcollections=**} {
-        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isSystemAdmin());
+        allow read, create, update, delete: if isAuthenticated() && (request.auth.uid == userId || isSystemAdmin());
       }
     }
 
     match /weeklySchedules/{userId} {
-      allow read, write: if isAuthenticated() && (request.auth.uid == userId || isSystemAdmin());
+      allow read, create, update, delete: if isAuthenticated() && (request.auth.uid == userId || isSystemAdmin());
     }
 
     // Default deny
