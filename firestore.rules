@@ -57,8 +57,12 @@ service cloud.firestore {
       // System Admin has full permissions (create, read, update, delete)
       allow read, create, update, delete: if isSystemAdmin();
 
-      // Regular user can read, create, and update their own profile document with their Google UID
-      allow get, read: if isAuthenticated() && request.auth.uid == userId;
+      // Regular user can read their own profile by UID or by pre-registered matching email
+      allow get: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
+      );
+      allow list: if isAuthenticated() && request.auth.token.email != null;
       allow create, update: if isAuthenticated() && request.auth.uid == userId;
     }
 

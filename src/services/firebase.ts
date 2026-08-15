@@ -570,30 +570,99 @@ export async function getAllAuthorizedUsers(): Promise<AuthorizedUser[]> {
   }
 }
 
+export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise<UserProfile | null> {
+  const cleanEmail = rawEmail.trim().toLowerCase();
+  if (!cleanEmail) return null;
+
+  // 1. Check authorized_users collection doc
+  try {
+    const authSnap = await getDoc(doc(db, "authorized_users", cleanEmail));
+    if (authSnap.exists()) {
+      const data = authSnap.data() as AuthorizedUser;
+      return {
+        uid: `auth_${cleanEmail}`,
+        email: cleanEmail,
+        displayName: data.displayName || cleanEmail.split('@')[0],
+        photoURL: null,
+        role: data.role || 'manager',
+        status: data.status || 'active',
+        schoolId: data.schoolId || null,
+        schoolName: data.schoolName || null,
+        createdAt: data.createdAt || new Date().toISOString(),
+        updatedAt: data.updatedAt || new Date().toISOString(),
+      };
+    }
+  } catch (err) {
+    console.warn("[LOOKUP] Error checking authorized_users:", err);
+  }
+
+  // 2. Query users collection by lowercase email
+  try {
+    const q1 = query(collection(db, "users"), where("email", "==", cleanEmail));
+    const snap1 = await getDocs(q1);
+    if (!snap1.empty) {
+      const docData = snap1.docs[0].data() as UserProfile;
+      return {
+        ...docData,
+        uid: snap1.docs[0].id,
+      };
+    }
+  } catch (err) {
+    console.warn("[LOOKUP] Error querying users by lowercase email:", err);
+  }
+
+  // 3. Query users collection by raw email (if case differs)
+  if (rawEmail !== cleanEmail) {
+    try {
+      const q2 = query(collection(db, "users"), where("email", "==", rawEmail));
+      const snap2 = await getDocs(q2);
+      if (!snap2.empty) {
+        const docData = snap2.docs[0].data() as UserProfile;
+        return {
+          ...docData,
+          uid: snap2.docs[0].id,
+        };
+      }
+    } catch (err) {
+      console.warn("[LOOKUP] Error querying users by raw email:", err);
+    }
+  }
+
+  // 4. Check direct users/{cleanEmail} or users/{rawEmail}
+  try {
+    const docSnap1 = await getDoc(doc(db, "users", cleanEmail));
+    if (docSnap1.exists()) {
+      return {
+        ...(docSnap1.data() as UserProfile),
+        uid: docSnap1.id,
+      };
+    }
+  } catch (_) {}
+
+  return null;
+}
+
 /**
  * Sync or retrieve user profile in Firestore: users/{uid}
  * Logic:
- * 1. Print required debug logs
- * 2. If System Admin -> returns admin profile
- * 3. Checks authorized_users/{email}
- * 4. If found & active -> creates or updates users/{uid} and returns active profile
- * 5. If found & disabled -> returns disabled profile
- * 6. If not found in authorized_users -> returns null (triggers unauthorized view)
+ * 1. Checks if System Admin -> returns admin profile
+ * 2. Checks users/{googleUid}
+ * 3. If not found by UID, searches by email (authorized_users, users query by email)
+ * 4. If found by email, links/updates to users/{googleUid} preserving role, schoolId, status, displayName
+ * 5. Outputs formatted logs for tracking
  */
 export async function syncUserProfile(user: User): Promise<UserProfile | null> {
   const googleUid = user.uid;
   const rawEmail = user.email || '';
   const email = rawEmail.toLowerCase().trim();
 
-  console.log("Google UID:", googleUid);
-  console.log("Google email:", rawEmail);
-  console.log("Normalized email:", email);
+  console.log(`[GOOGLE LOGIN]\nemail: ${rawEmail || 'none'}`);
 
   const now = new Date().toISOString();
   const isAdmin = isSystemAdminUser(user);
 
   try {
-    // 1. If user is System Admin by hardcoded email or UID
+    // 1. If System Admin
     if (isAdmin) {
       const userDocRef = doc(db, "users", googleUid);
       const adminProfile: UserProfile = {
@@ -613,91 +682,99 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       } catch (err) {
         console.warn("[AUTH] Admin setDoc warning:", err);
       }
-      console.log(`[USER PROFILE]\nrole: ${adminProfile.role}\nstatus: ${adminProfile.status}\nschoolId: none`);
-      console.log(`[LOGIN RESULT]\nsuccess: true\nrole: ${adminProfile.role}`);
+
+      console.log(`[PROFILE LOOKUP]\nlookupByUid: FOUND (${googleUid})\nlookupByEmail: FOUND (${email})`);
+      console.log(`[PROFILE FOUND]\nuid: ${googleUid}\nemail: ${email}\nrole: admin\nstatus: active\nschoolId: none`);
+      console.log(`[AUTHORIZATION]\nisAdmin: true\nisManager: false\nisApproved: true`);
+      console.log(`[LOGIN RESULT]\nsuccess: true\nrole: admin\nschoolId: none`);
       return adminProfile;
     }
 
-    // 2. Check authorized_users collection by email
-    let authorizedUser: AuthorizedUser | null = null;
-    if (email) {
-      authorizedUser = await getAuthorizedUserByEmail(email);
+    // 2. Lookup by UID
+    let lookupByUidStatus = 'NOT_FOUND';
+    let profileByUid: UserProfile | null = null;
+    try {
+      const userDocRef = doc(db, "users", googleUid);
+      const userSnap = await getDoc(userDocRef);
+      if (userSnap.exists()) {
+        profileByUid = userSnap.data() as UserProfile;
+        lookupByUidStatus = `FOUND (${googleUid})`;
+      }
+    } catch (err) {
+      console.warn("[PROFILE LOOKUP] Could not check users/{uid}:", err);
     }
-    console.log("Authorized user:", authorizedUser);
 
-    if (!authorizedUser) {
-      console.log("Không tìm thấy email trong authorized_users");
+    // 3. Lookup by Email
+    let lookupByEmailStatus = 'NOT_FOUND';
+    let profileByEmail: UserProfile | null = null;
+    if (email) {
+      profileByEmail = await findPreRegisteredProfileByEmail(rawEmail);
+      if (profileByEmail) {
+        lookupByEmailStatus = `FOUND (${profileByEmail.email || email})`;
+      }
+    }
 
-      // Check if users/{googleUid} already exists in case it was provisioned previously
-      try {
-        const userDocRef = doc(db, "users", googleUid);
-        const userSnap = await getDoc(userDocRef);
-        if (userSnap.exists()) {
-          const existingProfile = userSnap.data() as UserProfile;
-          if (existingProfile.status === 'active') {
-            console.log(`[USER PROFILE]\nrole: ${existingProfile.role}\nstatus: ${existingProfile.status}\nschoolId: ${existingProfile.schoolId || 'none'}`);
-            console.log(`[LOGIN RESULT]\nsuccess: true\nrole: ${existingProfile.role}`);
-            return existingProfile;
-          } else if (existingProfile.status === 'disabled') {
-            console.log(`[USER PROFILE]\nrole: ${existingProfile.role}\nstatus: ${existingProfile.status}\nschoolId: ${existingProfile.schoolId || 'none'}`);
-            console.log(`[LOGIN RESULT]\nsuccess: true\nrole: ${existingProfile.role}`);
-            return existingProfile;
-          }
-        }
-      } catch (_) {}
+    console.log(`[PROFILE LOOKUP]\nlookupByUid: ${lookupByUidStatus}\nlookupByEmail: ${lookupByEmailStatus}`);
 
-      console.warn(`[USER PROFILE] Unauthorized login attempt for unregistered email: ${email}`);
-      console.log(`[LOGIN RESULT]\nsuccess: false\nrole: none`);
+    // If neither was found
+    if (!profileByUid && !profileByEmail) {
+      console.warn(`[USER PROFILE] No registered profile found for email: ${email} or UID: ${googleUid}`);
+      console.log(`[AUTHORIZATION]\nisAdmin: false\nisManager: false\nisApproved: false`);
+      console.log(`[LOGIN RESULT]\nsuccess: false\nrole: none\nschoolId: none`);
       return null;
     }
 
-    // 3. If found in authorized_users but status is disabled
-    if (authorizedUser.status === 'disabled') {
-      const disabledProfile: UserProfile = {
-        uid: googleUid,
-        displayName: user.displayName || authorizedUser.displayName,
-        email: email,
-        photoURL: user.photoURL || null,
-        role: authorizedUser.role || 'manager',
-        status: 'disabled',
-        schoolId: authorizedUser.schoolId || null,
-        schoolName: authorizedUser.schoolName || null,
-        createdAt: authorizedUser.createdAt || now,
-        updatedAt: now,
-      };
-      console.log(`[USER PROFILE]\nrole: ${disabledProfile.role}\nstatus: ${disabledProfile.status}\nschoolId: ${disabledProfile.schoolId || 'none'}`);
-      console.log(`[LOGIN RESULT]\nsuccess: true\nrole: ${disabledProfile.role}`);
-      return disabledProfile;
-    }
+    // 4. Resolve matched profile
+    const baseSource = profileByEmail || profileByUid!;
+    const isLinking = profileByEmail && profileByEmail.uid !== googleUid;
 
-    // 4. Authorized user is ACTIVE -> Create/Update users/{googleUid}
+    const finalRole = baseSource.role || "manager";
+    const finalStatus = baseSource.status || "active";
+    const finalSchoolId = baseSource.schoolId || null;
+    const finalSchoolName = baseSource.schoolName || null;
+
     const userDocRef = doc(db, "users", googleUid);
     const userProfile: UserProfile = {
       uid: googleUid,
-      displayName: user.displayName || authorizedUser.displayName || email.split('@')[0] || "Cán bộ quản lý",
-      email: email,
-      photoURL: user.photoURL || null,
-      role: authorizedUser.role || "manager",
-      status: "active",
-      schoolId: authorizedUser.schoolId || null,
-      schoolName: authorizedUser.schoolName || null,
-      createdAt: authorizedUser.createdAt || now,
+      displayName: user.displayName || baseSource.displayName || email.split('@')[0] || "Cán bộ quản lý",
+      email: email || baseSource.email,
+      photoURL: user.photoURL || baseSource.photoURL || null,
+      role: finalRole,
+      status: finalStatus,
+      schoolId: finalSchoolId,
+      schoolName: finalSchoolName,
+      createdAt: baseSource.createdAt || now,
       updatedAt: now,
     };
 
+    // Save/Update users/{googleUid}
     try {
       await setDoc(userDocRef, userProfile, { merge: true });
     } catch (writeErr) {
       console.warn("[USER PROFILE] Could not write users/{uid}:", writeErr);
     }
 
-    if (userProfile.role === 'manager') {
-      console.log(`[MANAGER AUTH]\nuid: ${user.uid}\nemail: ${user.email || ''}`);
-      console.log(`[MANAGER PROFILE]\nrole: ${userProfile.role}\nstatus: ${userProfile.status}\nschoolId: ${userProfile.schoolId || 'none'}`);
+    // Account link log & cleanup of old temporary ID if applicable
+    if (isLinking && profileByEmail) {
+      console.log(`[ACCOUNT LINK]\noldProfile: ${profileByEmail.uid}\nnewUid: ${googleUid}\nsuccess: true`);
+      if (profileByEmail.uid.startsWith("user_")) {
+        try {
+          await deleteDoc(doc(db, "users", profileByEmail.uid));
+        } catch (_) {}
+      }
+    } else {
+      console.log(`[ACCOUNT LINK]\noldProfile: ${profileByUid ? googleUid : 'none'}\nnewUid: ${googleUid}\nsuccess: true`);
     }
 
-    console.log(`[USER PROFILE]\nrole: ${userProfile.role}\nstatus: ${userProfile.status}\nschoolId: ${userProfile.schoolId || 'none'}`);
-    console.log(`[LOGIN RESULT]\nsuccess: true\nrole: ${userProfile.role}`);
+    // Print Profile Found
+    console.log(`[PROFILE FOUND]\nuid: ${userProfile.uid}\nemail: ${userProfile.email || email}\nrole: ${userProfile.role}\nstatus: ${userProfile.status}\nschoolId: ${userProfile.schoolId || 'none'}`);
+
+    const isManagerRole = userProfile.role === 'manager';
+    const isApprovedStatus = userProfile.status === 'active';
+
+    console.log(`[AUTHORIZATION]\nisAdmin: false\nisManager: ${isManagerRole}\nisApproved: ${isApprovedStatus}`);
+    console.log(`[LOGIN RESULT]\nsuccess: ${isApprovedStatus}\nrole: ${userProfile.role}\nschoolId: ${userProfile.schoolId || 'none'}`);
+
     return userProfile;
   } catch (error: any) {
     console.error("[USER PROFILE] Error syncing profile:", {
