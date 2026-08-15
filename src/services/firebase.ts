@@ -59,13 +59,16 @@ console.log("[DATABASE INSTANCE]", {
   projectId: db.app.options.projectId,
 });
 
-// Google Auth Provider
-const googleProvider = new GoogleAuthProvider();
-
 export async function loginWithGoogle(): Promise<User | null> {
   try {
-    const result = await signInWithPopup(auth, googleProvider);
-    console.log("[FIREBASE AUTH] uid =", result.user.uid, "email =", result.user.email);
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({
+      prompt: 'select_account',
+    });
+    const result = await signInWithPopup(auth, provider);
+    const selectedEmail = result.user.email || '';
+    console.log(`[GOOGLE ACCOUNT SELECTED]\nemail: ${selectedEmail}`);
+    console.log(`[AUTH READY]\nuid: ${result.user.uid}\nemail: ${selectedEmail}`);
     return result.user;
   } catch (error) {
     console.error("[FIREBASE AUTH] Google Login Error:", error);
@@ -85,7 +88,7 @@ export async function logoutFirebase(): Promise<void> {
 export function subscribeAuthState(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, (user) => {
     if (user) {
-      console.log("[FIREBASE AUTH] uid =", user.uid, "email =", user.email);
+      console.log(`[AUTH READY]\nuid: ${user.uid}\nemail: ${user.email || ''}`);
     } else {
       console.log("[FIREBASE AUTH] Firebase Authentication chưa xác định được người dùng.");
     }
@@ -610,7 +613,8 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       } catch (err) {
         console.warn("[AUTH] Admin setDoc warning:", err);
       }
-      console.log("Final user profile:", adminProfile);
+      console.log(`[USER PROFILE]\nrole: ${adminProfile.role}\nstatus: ${adminProfile.status}\nschoolId: none`);
+      console.log(`[LOGIN RESULT]\nsuccess: true\nrole: ${adminProfile.role}`);
       return adminProfile;
     }
 
@@ -631,16 +635,19 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         if (userSnap.exists()) {
           const existingProfile = userSnap.data() as UserProfile;
           if (existingProfile.status === 'active') {
-            console.log("Final user profile:", existingProfile);
+            console.log(`[USER PROFILE]\nrole: ${existingProfile.role}\nstatus: ${existingProfile.status}\nschoolId: ${existingProfile.schoolId || 'none'}`);
+            console.log(`[LOGIN RESULT]\nsuccess: true\nrole: ${existingProfile.role}`);
             return existingProfile;
           } else if (existingProfile.status === 'disabled') {
-            console.log("Final user profile (disabled):", existingProfile);
+            console.log(`[USER PROFILE]\nrole: ${existingProfile.role}\nstatus: ${existingProfile.status}\nschoolId: ${existingProfile.schoolId || 'none'}`);
+            console.log(`[LOGIN RESULT]\nsuccess: true\nrole: ${existingProfile.role}`);
             return existingProfile;
           }
         }
       } catch (_) {}
 
       console.warn(`[USER PROFILE] Unauthorized login attempt for unregistered email: ${email}`);
+      console.log(`[LOGIN RESULT]\nsuccess: false\nrole: none`);
       return null;
     }
 
@@ -658,7 +665,8 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         createdAt: authorizedUser.createdAt || now,
         updatedAt: now,
       };
-      console.log("Final user profile (disabled):", disabledProfile);
+      console.log(`[USER PROFILE]\nrole: ${disabledProfile.role}\nstatus: ${disabledProfile.status}\nschoolId: ${disabledProfile.schoolId || 'none'}`);
+      console.log(`[LOGIN RESULT]\nsuccess: true\nrole: ${disabledProfile.role}`);
       return disabledProfile;
     }
 
@@ -688,7 +696,8 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       console.log(`[MANAGER PROFILE]\nrole: ${userProfile.role}\nstatus: ${userProfile.status}\nschoolId: ${userProfile.schoolId || 'none'}`);
     }
 
-    console.log("Final user profile:", userProfile);
+    console.log(`[USER PROFILE]\nrole: ${userProfile.role}\nstatus: ${userProfile.status}\nschoolId: ${userProfile.schoolId || 'none'}`);
+    console.log(`[LOGIN RESULT]\nsuccess: true\nrole: ${userProfile.role}`);
     return userProfile;
   } catch (error: any) {
     console.error("[USER PROFILE] Error syncing profile:", {
