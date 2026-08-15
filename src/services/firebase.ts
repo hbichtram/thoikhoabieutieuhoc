@@ -20,7 +20,7 @@ import {
   onAuthStateChanged,
   User,
 } from "firebase/auth";
-import { UserProfile, School, UserSummary, AuthorizedUser } from "../types";
+import { UserProfile, School, UserSummary, AuthorizedUser, UserInvite, UserRole, UserStatus } from "../types";
 
 // Your web app's Firebase configuration
 export const firebaseConfig = {
@@ -468,310 +468,275 @@ export function isSystemAdminUser(user?: { uid?: string; email?: string | null }
   return false;
 }
 
+export function getEmailKey(email: string): string {
+  return email.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
+}
+
 /**
- * Collection: authorized_users/{emailKey}
- * Where emailKey is email.toLowerCase().trim()
+ * Collection: userInvites/{emailKey}
+ * Primary provisioned invite storage for Manager pre-registration by Admin.
  */
-export async function getAuthorizedUserByEmail(email: string): Promise<AuthorizedUser | null> {
+export async function getUserInviteByEmail(email: string): Promise<UserInvite | null> {
   const cleanEmail = email.trim().toLowerCase();
   if (!cleanEmail) return null;
+  const key = getEmailKey(cleanEmail);
+
+  // Try direct cleanEmail doc first
   try {
-    const authDocRef = doc(db, "authorized_users", cleanEmail);
-    const snap = await getDoc(authDocRef);
+    const snap = await getDoc(doc(db, "userInvites", cleanEmail));
     if (snap.exists()) {
-      return snap.data() as AuthorizedUser;
+      return snap.data() as UserInvite;
     }
-    return null;
-  } catch (err) {
-    console.warn("[AUTH] Could not get authorized_users doc:", err);
-    return null;
-  }
-}
+  } catch (_) {}
 
-export async function createAuthorizedUser(data: AuthorizedUser): Promise<boolean> {
-  const cleanEmail = data.email.trim().toLowerCase();
-  const now = new Date().toISOString();
-  const payload: AuthorizedUser = {
-    email: cleanEmail,
-    displayName: data.displayName || cleanEmail.split('@')[0],
-    role: data.role || 'manager',
-    status: data.status || 'active',
-    schoolId: data.schoolId || null,
-    schoolName: data.schoolName || null,
-    createdAt: data.createdAt || now,
-    updatedAt: now,
-  };
+  // Try sanitized key doc
   try {
-    const authDocRef = doc(db, "authorized_users", cleanEmail);
-    await setDoc(authDocRef, payload, { merge: true });
-    console.log(`[AUTH] Successfully saved authorized_users/${cleanEmail}:`, payload);
-    return true;
-  } catch (err: any) {
-    console.error("[AUTH] Error saving authorized_user:", err);
-    return false;
-  }
-}
+    const snap = await getDoc(doc(db, "userInvites", key));
+    if (snap.exists()) {
+      return snap.data() as UserInvite;
+    }
+  } catch (_) {}
 
-export async function updateAuthorizedUser(email: string, updates: Partial<AuthorizedUser>): Promise<boolean> {
-  const cleanEmail = email.trim().toLowerCase();
-  const now = new Date().toISOString();
-  try {
-    const authDocRef = doc(db, "authorized_users", cleanEmail);
-    await setDoc(authDocRef, { ...updates, updatedAt: now }, { merge: true });
-    return true;
-  } catch (err) {
-    console.error("[AUTH] Error updating authorized_user:", err);
-    return false;
-  }
-}
-
-export async function deleteAuthorizedUser(email: string): Promise<boolean> {
-  const cleanEmail = email.trim().toLowerCase();
-  try {
-    const authDocRef = doc(db, "authorized_users", cleanEmail);
-    await deleteDoc(authDocRef);
-    return true;
-  } catch (err) {
-    console.error("[AUTH] Error deleting authorized_user:", err);
-    return false;
-  }
-}
-
-export async function getAllAuthorizedUsers(): Promise<AuthorizedUser[]> {
-  try {
-    const colRef = collection(db, "authorized_users");
-    const q = query(colRef, orderBy("createdAt", "desc"));
-    const snap = await getDocs(q);
-    const list: AuthorizedUser[] = [];
-    snap.forEach((d) => list.push(d.data() as AuthorizedUser));
-    return list;
-  } catch (err) {
-    console.error("[AUTH] Error fetching all authorized_users:", err);
-    return [];
-  }
-}
-
-export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise<UserProfile | null> {
-  const cleanEmail = rawEmail.trim().toLowerCase();
-  if (!cleanEmail) return null;
-
-  // 1. Check authorized_users collection doc by cleanEmail
+  // Fallback to authorized_users
   try {
     const authSnap = await getDoc(doc(db, "authorized_users", cleanEmail));
     if (authSnap.exists()) {
-      const data = authSnap.data() as any;
+      const d = authSnap.data() as any;
       return {
-        uid: `auth_${cleanEmail}`,
         email: cleanEmail,
-        displayName: data.displayName || data.name || cleanEmail.split('@')[0],
-        photoURL: data.photoURL || null,
-        role: data.role || 'manager',
-        status: data.status || 'active',
-        schoolId: data.schoolId || null,
-        schoolName: data.schoolName || null,
-        createdAt: data.createdAt || new Date().toISOString(),
-        updatedAt: data.updatedAt || new Date().toISOString(),
-      };
-    }
-  } catch (err) {
-    console.warn("[LOOKUP] Error checking authorized_users by cleanEmail:", err);
-  }
-
-  // 2. Check authorized_users by rawEmail if different
-  if (rawEmail !== cleanEmail) {
-    try {
-      const authSnapRaw = await getDoc(doc(db, "authorized_users", rawEmail.trim()));
-      if (authSnapRaw.exists()) {
-        const data = authSnapRaw.data() as any;
-        return {
-          uid: `auth_${cleanEmail}`,
-          email: cleanEmail,
-          displayName: data.displayName || data.name || cleanEmail.split('@')[0],
-          photoURL: data.photoURL || null,
-          role: data.role || 'manager',
-          status: data.status || 'active',
-          schoolId: data.schoolId || null,
-          schoolName: data.schoolName || null,
-          createdAt: data.createdAt || new Date().toISOString(),
-          updatedAt: data.updatedAt || new Date().toISOString(),
-        };
-      }
-    } catch (err) {
-      console.warn("[LOOKUP] Error checking authorized_users by rawEmail:", err);
-    }
-  }
-
-  // 3. Direct get users/{cleanEmail} or users/{rawEmail}
-  try {
-    const docSnapClean = await getDoc(doc(db, "users", cleanEmail));
-    if (docSnapClean.exists()) {
-      const data = docSnapClean.data() as any;
-      return {
-        uid: docSnapClean.id,
-        email: cleanEmail,
-        displayName: data.displayName || data.name || cleanEmail.split('@')[0],
-        photoURL: data.photoURL || null,
-        role: data.role || 'manager',
-        status: data.status || 'active',
-        schoolId: data.schoolId || null,
-        schoolName: data.schoolName || null,
-        createdAt: data.createdAt || new Date().toISOString(),
-        updatedAt: data.updatedAt || new Date().toISOString(),
+        displayName: d.displayName || d.name || cleanEmail.split('@')[0],
+        role: d.role || 'manager',
+        status: d.status || 'invited',
+        schoolId: d.schoolId || null,
+        schoolName: d.schoolName || null,
+        createdAt: d.createdAt || new Date().toISOString(),
+        updatedAt: d.updatedAt || new Date().toISOString(),
       };
     }
   } catch (_) {}
 
-  if (rawEmail !== cleanEmail) {
+  return null;
+}
+
+export async function createUserInvite(data: UserInvite): Promise<boolean> {
+  const cleanEmail = data.email.trim().toLowerCase();
+  const key = getEmailKey(cleanEmail);
+  const now = new Date().toISOString();
+
+  const payload: UserInvite = {
+    email: cleanEmail,
+    displayName: data.displayName || data.name || cleanEmail.split('@')[0],
+    role: data.role || 'manager',
+    status: data.status || 'invited',
+    schoolId: data.schoolId || null,
+    schoolName: data.schoolName || null,
+    uid: data.uid || null,
+    createdAt: data.createdAt || now,
+    updatedAt: now,
+    lastLoginAt: data.lastLoginAt || null,
+  };
+
+  try {
+    // 1. Save to userInvites/{cleanEmail}
+    await setDoc(doc(db, "userInvites", cleanEmail), payload, { merge: true });
+    // 2. Save to userInvites/{key}
+    if (key !== cleanEmail) {
+      await setDoc(doc(db, "userInvites", key), payload, { merge: true });
+    }
+    // 3. Save to authorized_users/{cleanEmail} for backwards compatibility
+    await setDoc(doc(db, "authorized_users", cleanEmail), payload, { merge: true });
+
+    console.log(`[USER INVITE] Created invite for ${cleanEmail} (schoolId: ${payload.schoolId}, status: ${payload.status})`);
+    return true;
+  } catch (err) {
+    console.error("[USER INVITE] Error creating invite:", err);
+    return false;
+  }
+}
+
+export async function updateUserInvite(email: string, updates: Partial<UserInvite>): Promise<boolean> {
+  const cleanEmail = email.trim().toLowerCase();
+  const key = getEmailKey(cleanEmail);
+  const now = new Date().toISOString();
+  const payload = { ...updates, updatedAt: now };
+
+  try {
+    await setDoc(doc(db, "userInvites", cleanEmail), payload, { merge: true });
+    if (key !== cleanEmail) {
+      await setDoc(doc(db, "userInvites", key), payload, { merge: true });
+    }
+    await setDoc(doc(db, "authorized_users", cleanEmail), payload, { merge: true });
+    return true;
+  } catch (err) {
+    console.error("[USER INVITE] Error updating invite:", err);
+    return false;
+  }
+}
+
+export async function deleteUserInvite(email: string): Promise<boolean> {
+  const cleanEmail = email.trim().toLowerCase();
+  const key = getEmailKey(cleanEmail);
+  try {
+    await deleteDoc(doc(db, "userInvites", cleanEmail)).catch(() => {});
+    if (key !== cleanEmail) {
+      await deleteDoc(doc(db, "userInvites", key)).catch(() => {});
+    }
+    await deleteDoc(doc(db, "authorized_users", cleanEmail)).catch(() => {});
+    return true;
+  } catch (err) {
+    console.error("[USER INVITE] Error deleting invite:", err);
+    return false;
+  }
+}
+
+export async function getAllUserInvites(): Promise<UserInvite[]> {
+  try {
+    const colRef = collection(db, "userInvites");
+    const snap = await getDocs(colRef);
+    const invitesMap = new Map<string, UserInvite>();
+    snap.forEach((d) => {
+      const data = d.data() as UserInvite;
+      if (data && data.email) {
+        invitesMap.set(data.email.toLowerCase().trim(), data);
+      }
+    });
+    return Array.from(invitesMap.values());
+  } catch (err) {
+    console.warn("[USER INVITE] Error reading userInvites collection:", err);
+    return [];
+  }
+}
+
+// Backwards compatibility wrappers
+export async function getAuthorizedUserByEmail(email: string): Promise<AuthorizedUser | null> {
+  return getUserInviteByEmail(email);
+}
+
+export async function createAuthorizedUser(data: AuthorizedUser): Promise<boolean> {
+  return createUserInvite(data as UserInvite);
+}
+
+export async function updateAuthorizedUser(email: string, updates: Partial<AuthorizedUser>): Promise<boolean> {
+  return updateUserInvite(email, updates);
+}
+
+export async function deleteAuthorizedUser(email: string): Promise<boolean> {
+  return deleteUserInvite(email);
+}
+
+export async function getAllAuthorizedUsers(): Promise<AuthorizedUser[]> {
+  return (await getAllUserInvites()) as AuthorizedUser[];
+}
+
+/**
+ * Find pre-registered invite or user profile by email using single-doc lookups.
+ * Safe for newly authenticated Google users who do not have collection query permissions.
+ */
+export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise<UserInvite | null> {
+  const cleanEmail = rawEmail.trim().toLowerCase();
+  if (!cleanEmail) return null;
+  const key = getEmailKey(cleanEmail);
+
+  // 1. Direct get userInvites/{cleanEmail}
+  try {
+    const inviteSnap1 = await getDoc(doc(db, "userInvites", cleanEmail));
+    if (inviteSnap1.exists()) {
+      return inviteSnap1.data() as UserInvite;
+    }
+  } catch (_) {}
+
+  // 2. Direct get userInvites/{key}
+  if (key !== cleanEmail) {
     try {
-      const docSnapRaw = await getDoc(doc(db, "users", rawEmail.trim()));
-      if (docSnapRaw.exists()) {
-        const data = docSnapRaw.data() as any;
-        return {
-          uid: docSnapRaw.id,
-          email: cleanEmail,
-          displayName: data.displayName || data.name || cleanEmail.split('@')[0],
-          photoURL: data.photoURL || null,
-          role: data.role || 'manager',
-          status: data.status || 'active',
-          schoolId: data.schoolId || null,
-          schoolName: data.schoolName || null,
-          createdAt: data.createdAt || new Date().toISOString(),
-          updatedAt: data.updatedAt || new Date().toISOString(),
-        };
+      const inviteSnap2 = await getDoc(doc(db, "userInvites", key));
+      if (inviteSnap2.exists()) {
+        return inviteSnap2.data() as UserInvite;
       }
     } catch (_) {}
   }
 
-  // 4. Query users where email == cleanEmail
+  // 3. Direct get authorized_users/{cleanEmail}
+  try {
+    const authSnap = await getDoc(doc(db, "authorized_users", cleanEmail));
+    if (authSnap.exists()) {
+      const d = authSnap.data() as any;
+      return {
+        email: cleanEmail,
+        displayName: d.displayName || d.name || cleanEmail.split('@')[0],
+        role: d.role || 'manager',
+        status: d.status || 'invited',
+        schoolId: d.schoolId || null,
+        schoolName: d.schoolName || null,
+        createdAt: d.createdAt || new Date().toISOString(),
+        updatedAt: d.updatedAt || new Date().toISOString(),
+      };
+    }
+  } catch (_) {}
+
+  // 4. Direct get users/{cleanEmail}
+  try {
+    const userSnapClean = await getDoc(doc(db, "users", cleanEmail));
+    if (userSnapClean.exists()) {
+      const d = userSnapClean.data() as any;
+      return {
+        email: cleanEmail,
+        displayName: d.displayName || d.name || cleanEmail.split('@')[0],
+        role: d.role || 'manager',
+        status: d.status || 'invited',
+        schoolId: d.schoolId || null,
+        schoolName: d.schoolName || null,
+        createdAt: d.createdAt || new Date().toISOString(),
+        updatedAt: d.updatedAt || new Date().toISOString(),
+      };
+    }
+  } catch (_) {}
+
+  // 5. Query users where email == cleanEmail (works if allowed)
   try {
     const q1 = query(collection(db, "users"), where("email", "==", cleanEmail));
     const snap1 = await getDocs(q1);
     if (!snap1.empty) {
-      const d = snap1.docs[0];
-      const docData = d.data() as any;
+      const d = snap1.docs[0].data() as any;
       return {
-        uid: d.id,
         email: cleanEmail,
-        displayName: docData.displayName || docData.name || cleanEmail.split('@')[0],
-        photoURL: docData.photoURL || null,
-        role: docData.role || 'manager',
-        status: docData.status || 'active',
-        schoolId: docData.schoolId || null,
-        schoolName: docData.schoolName || null,
-        createdAt: docData.createdAt || new Date().toISOString(),
-        updatedAt: docData.updatedAt || new Date().toISOString(),
+        displayName: d.displayName || d.name || cleanEmail.split('@')[0],
+        role: d.role || 'manager',
+        status: d.status || 'active',
+        schoolId: d.schoolId || null,
+        schoolName: d.schoolName || null,
+        createdAt: d.createdAt || new Date().toISOString(),
+        updatedAt: d.updatedAt || new Date().toISOString(),
       };
     }
-  } catch (err) {
-    console.warn("[LOOKUP] Error querying users by cleanEmail:", err);
-  }
-
-  // 5. Query users where email == rawEmail
-  if (rawEmail !== cleanEmail) {
-    try {
-      const q2 = query(collection(db, "users"), where("email", "==", rawEmail));
-      const snap2 = await getDocs(q2);
-      if (!snap2.empty) {
-        const d = snap2.docs[0];
-        const docData = d.data() as any;
-        return {
-          uid: d.id,
-          email: cleanEmail,
-          displayName: docData.displayName || docData.name || cleanEmail.split('@')[0],
-          photoURL: docData.photoURL || null,
-          role: docData.role || 'manager',
-          status: docData.status || 'active',
-          schoolId: docData.schoolId || null,
-          schoolName: docData.schoolName || null,
-          createdAt: docData.createdAt || new Date().toISOString(),
-          updatedAt: docData.updatedAt || new Date().toISOString(),
-        };
-      }
-    } catch (err) {
-      console.warn("[LOOKUP] Error querying users by rawEmail:", err);
-    }
-  }
-
-  // 6. Comprehensive scan over users collection (matches any doc where email equals cleanEmail case-insensitively)
-  try {
-    const allUsersSnap = await getDocs(collection(db, "users"));
-    for (const docItem of allUsersSnap.docs) {
-      const data = docItem.data() as any;
-      const itemEmail = (data.email || '').trim().toLowerCase();
-      if (itemEmail && itemEmail === cleanEmail) {
-        return {
-          uid: docItem.id,
-          email: cleanEmail,
-          displayName: data.displayName || data.name || cleanEmail.split('@')[0],
-          photoURL: data.photoURL || null,
-          role: data.role || 'manager',
-          status: data.status || 'active',
-          schoolId: data.schoolId || null,
-          schoolName: data.schoolName || null,
-          createdAt: data.createdAt || new Date().toISOString(),
-          updatedAt: data.updatedAt || new Date().toISOString(),
-        };
-      }
-    }
-  } catch (err) {
-    console.warn("[LOOKUP] Error scanning all users collection:", err);
-  }
-
-  // 7. Comprehensive scan over authorized_users collection
-  try {
-    const allAuthSnap = await getDocs(collection(db, "authorized_users"));
-    for (const docItem of allAuthSnap.docs) {
-      const data = docItem.data() as any;
-      const itemEmail = (data.email || docItem.id || '').trim().toLowerCase();
-      if (itemEmail && itemEmail === cleanEmail) {
-        return {
-          uid: `auth_${cleanEmail}`,
-          email: cleanEmail,
-          displayName: data.displayName || data.name || cleanEmail.split('@')[0],
-          photoURL: data.photoURL || null,
-          role: data.role || 'manager',
-          status: data.status || 'active',
-          schoolId: data.schoolId || null,
-          schoolName: data.schoolName || null,
-          createdAt: data.createdAt || new Date().toISOString(),
-          updatedAt: data.updatedAt || new Date().toISOString(),
-        };
-      }
-    }
-  } catch (err) {
-    console.warn("[LOOKUP] Error scanning authorized_users collection:", err);
-  }
+  } catch (_) {}
 
   return null;
 }
 
 /**
- * Sync or retrieve user profile in Firestore: users/{uid}
- * Logic:
- * 1. Checks if System Admin -> returns admin profile
- * 2. Checks users/{googleUid}
- * 3. If not found by UID, searches by email (authorized_users, users query by email)
- * 4. If found by email, links/updates to users/{googleUid} preserving role, schoolId, status, displayName
- * 5. Outputs formatted logs for tracking
+ * Sync or retrieve user profile in Firestore: users/{googleUid}
+ * Luồng chuẩn:
+ * AUTH READY -> Lấy UID + email Google -> Xác định Admin hay Manager
+ * -> Tìm hồ sơ user qua userInvites/{emailKey}
+ * -> Nếu invited -> liên kết UID -> active + lastLoginAt
+ * -> Ghi users/{googleUid} -> Xác định schoolId -> SYNCED
  */
 export async function syncUserProfile(user: User): Promise<UserProfile | null> {
   const googleUid = user.uid;
   const rawEmail = user.email || '';
-  const email = rawEmail.toLowerCase().trim();
-
-  console.log(`[GOOGLE LOGIN]\nuid: ${googleUid}\nemail: ${rawEmail || 'none'}`);
-
+  const cleanEmail = rawEmail.toLowerCase().trim();
   const now = new Date().toISOString();
   const isAdmin = isSystemAdminUser(user);
 
+  console.log(`[AUTH READY]\nuid: ${googleUid}\nemail: ${rawEmail || 'none'}`);
+
   try {
-    // 1. If System Admin
+    // 1. If System Admin -> full admin access
     if (isAdmin) {
-      const userDocRef = doc(db, "users", googleUid);
       const adminProfile: UserProfile = {
         uid: googleUid,
-        displayName: user.displayName || email.split('@')[0] || "Admin Hệ Thống",
-        email: email || null,
+        displayName: user.displayName || cleanEmail.split('@')[0] || "Admin Hệ Thống",
+        email: cleanEmail || null,
         photoURL: user.photoURL || null,
         role: "admin",
         status: "active",
@@ -779,96 +744,123 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         schoolName: null,
         createdAt: now,
         updatedAt: now,
+        lastLoginAt: now,
       };
+
       try {
-        await setDoc(userDocRef, adminProfile, { merge: true });
+        await setDoc(doc(db, "users", googleUid), adminProfile, { merge: true });
       } catch (err) {
         console.warn("[AUTH] Admin setDoc warning:", err);
       }
 
-      console.log(`[PROFILE BY UID]\nfound: true`);
-      console.log(`[PROFILE BY EMAIL]\nfound: true`);
-      console.log(`[PROFILE LINK]\noldUid: ${googleUid}\nnewUid: ${googleUid}\nemail: ${email}\nrole: admin\nstatus: active\nschoolId: none\nsuccess: true`);
-      console.log(`[FINAL AUTHORIZATION]\nisAdmin: true\nisManager: false\nisApproved: true\nschoolId: none`);
-      console.log(`[FINAL LOGIN RESULT]\nsuccess: true\nrole: admin\nschoolId: none\nschoolName: none`);
+      console.log(`[USER PROFILE]\nuid: ${googleUid}\nemail: ${cleanEmail}\nrole: admin\nschoolId: none\nstatus: active`);
+      console.log(`[AUTHORIZATION]\nisAdmin: true\nisManager: false\nisApproved: true`);
       return adminProfile;
     }
 
-    // 2. Lookup by UID
-    let profileByUid: UserProfile | null = null;
+    // 2. Check existing profile in users/{googleUid}
+    let existingProfile: UserProfile | null = null;
     try {
-      const userDocRef = doc(db, "users", googleUid);
-      const userSnap = await getDoc(userDocRef);
+      const userSnap = await getDoc(doc(db, "users", googleUid));
       if (userSnap.exists()) {
-        profileByUid = userSnap.data() as UserProfile;
+        existingProfile = userSnap.data() as UserProfile;
       }
     } catch (err) {
-      console.warn("[PROFILE LOOKUP] Could not check users/{uid}:", err);
+      console.warn("[PROFILE LOOKUP] users/{uid} check:", err);
     }
-    console.log(`[PROFILE BY UID]\nfound: ${profileByUid ? 'true' : 'false'}`);
 
-    // 3. Lookup by Email
-    let profileByEmail: UserProfile | null = null;
-    if (email) {
-      profileByEmail = await findPreRegisteredProfileByEmail(rawEmail);
+    // 3. Search pre-registered invite by email in userInvites
+    let inviteData: UserInvite | null = null;
+    if (cleanEmail) {
+      inviteData = await findPreRegisteredProfileByEmail(rawEmail);
     }
-    console.log(`[PROFILE BY EMAIL]\nfound: ${profileByEmail ? 'true' : 'false'}`);
 
-    // If neither was found
-    if (!profileByUid && !profileByEmail) {
-      console.warn(`[USER PROFILE] No registered profile found for email: ${email} or UID: ${googleUid}`);
-      console.log(`[FINAL AUTHORIZATION]\nisAdmin: false\nisManager: false\nisApproved: false\nschoolId: none`);
-      console.log(`[FINAL LOGIN RESULT]\nsuccess: false\nrole: none\nschoolId: none\nschoolName: none`);
+    // 4. If neither existing profile nor invite exists -> Unauthorized
+    if (!existingProfile && !inviteData) {
+      console.warn(`[USER PROFILE] No authorized invite found for email: ${cleanEmail} (UID: ${googleUid})`);
+      console.log(`[USER PROFILE]\nuid: ${googleUid}\nemail: ${cleanEmail}\nrole: none\nschoolId: none\nstatus: unauthorized`);
+      console.log(`[AUTHORIZATION]\nisAdmin: false\nisManager: false\nisApproved: false`);
       return null;
     }
 
-    // 4. Resolve matched profile
-    const baseSource = profileByEmail || profileByUid!;
-    const oldUid = profileByEmail ? profileByEmail.uid : googleUid;
-    const isLinking = profileByEmail && profileByEmail.uid !== googleUid;
+    // 5. If account is explicitly disabled by Admin
+    const isExplicitlyDisabled = 
+      (inviteData && inviteData.status === 'disabled') ||
+      (!inviteData && existingProfile && existingProfile.status === 'disabled');
 
-    const finalRole = baseSource.role || "manager";
-    const finalStatus = baseSource.status || "active";
-    const finalSchoolId = baseSource.schoolId || null;
-    const finalSchoolName = baseSource.schoolName || null;
-    const finalDisplayName = baseSource.displayName || baseSource.name || user.displayName || email.split('@')[0] || "Cán bộ quản lý";
+    if (isExplicitlyDisabled) {
+      const disabledProfile: UserProfile = {
+        uid: googleUid,
+        displayName: user.displayName || inviteData?.displayName || existingProfile?.displayName || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        photoURL: user.photoURL || null,
+        role: inviteData?.role || existingProfile?.role || 'manager',
+        status: 'disabled',
+        schoolId: inviteData?.schoolId || existingProfile?.schoolId || null,
+        schoolName: inviteData?.schoolName || existingProfile?.schoolName || null,
+        createdAt: inviteData?.createdAt || existingProfile?.createdAt || now,
+        updatedAt: now,
+        lastLoginAt: now,
+      };
 
-    const userDocRef = doc(db, "users", googleUid);
+      try {
+        await setDoc(doc(db, "users", googleUid), disabledProfile, { merge: true });
+      } catch (_) {}
+
+      console.log(`[USER PROFILE]\nuid: ${googleUid}\nemail: ${cleanEmail}\nrole: ${disabledProfile.role}\nschoolId: ${disabledProfile.schoolId || 'none'}\nstatus: disabled`);
+      console.log(`[AUTHORIZATION]\nisAdmin: false\nisManager: false\nisApproved: false`);
+      return disabledProfile;
+    }
+
+    // 6. Link UID & Activate Account:
+    // Retain schoolId, schoolName, role granted by Admin. Promote status to 'active'.
+    const finalRole: UserRole = inviteData?.role || existingProfile?.role || 'manager';
+    const finalSchoolId = inviteData?.schoolId !== undefined ? inviteData.schoolId : (existingProfile?.schoolId || null);
+    const finalSchoolName = inviteData?.schoolName !== undefined ? inviteData.schoolName : (existingProfile?.schoolName || null);
+    const finalDisplayName = user.displayName || inviteData?.displayName || inviteData?.name || existingProfile?.displayName || cleanEmail.split('@')[0] || "Cán bộ quản lý";
+    const finalCreatedAt = inviteData?.createdAt || existingProfile?.createdAt || now;
+
     const userProfile: UserProfile = {
       uid: googleUid,
       displayName: finalDisplayName,
-      email: email || baseSource.email,
-      photoURL: user.photoURL || baseSource.photoURL || null,
+      email: cleanEmail,
+      photoURL: user.photoURL || existingProfile?.photoURL || null,
       role: finalRole,
-      status: finalStatus,
+      status: 'active',
       schoolId: finalSchoolId,
       schoolName: finalSchoolName,
-      createdAt: baseSource.createdAt || now,
+      createdAt: finalCreatedAt,
       updatedAt: now,
+      lastLoginAt: now,
     };
 
-    // Save/Update users/{googleUid}
+    // Save to users/{googleUid}
     try {
-      await setDoc(userDocRef, userProfile, { merge: true });
+      await setDoc(doc(db, "users", googleUid), userProfile, { merge: true });
     } catch (writeErr) {
-      console.warn("[USER PROFILE] Could not write users/{uid}:", writeErr);
+      console.warn("[USER PROFILE] Write users/{uid} error:", writeErr);
     }
 
-    // Log profile link
-    console.log(`[PROFILE LINK]\noldUid: ${oldUid}\nnewUid: ${googleUid}\nemail: ${email}\nrole: ${finalRole}\nstatus: ${finalStatus}\nschoolId: ${finalSchoolId || 'none'}\nsuccess: true`);
-
-    // Cleanup old temporary ID if applicable
-    if (isLinking && profileByEmail && profileByEmail.uid.startsWith("user_")) {
+    // Update invite status to active & link UID
+    if (cleanEmail) {
+      const linkUpdate = {
+        status: 'active' as UserStatus,
+        uid: googleUid,
+        lastLoginAt: now,
+        updatedAt: now,
+      };
       try {
-        await deleteDoc(doc(db, "users", profileByEmail.uid));
+        await setDoc(doc(db, "userInvites", cleanEmail), linkUpdate, { merge: true });
+        const key = getEmailKey(cleanEmail);
+        if (key !== cleanEmail) {
+          await setDoc(doc(db, "userInvites", key), linkUpdate, { merge: true });
+        }
+        await setDoc(doc(db, "authorized_users", cleanEmail), linkUpdate, { merge: true });
       } catch (_) {}
     }
 
-    const isManagerRole = userProfile.role === 'manager';
-    const isApprovedStatus = userProfile.status === 'active';
-
-    console.log(`[FINAL AUTHORIZATION]\nisAdmin: false\nisManager: ${isManagerRole}\nisApproved: ${isApprovedStatus}\nschoolId: ${finalSchoolId || 'none'}`);
-    console.log(`[FINAL LOGIN RESULT]\nsuccess: ${isApprovedStatus}\nrole: ${userProfile.role}\nschoolId: ${finalSchoolId || 'none'}\nschoolName: ${finalSchoolName || 'none'}`);
+    console.log(`[USER PROFILE]\nuid: ${googleUid}\nemail: ${cleanEmail}\nrole: ${finalRole}\nschoolId: ${finalSchoolId || 'none'}\nstatus: active`);
+    console.log(`[AUTHORIZATION]\nisAdmin: false\nisManager: ${finalRole === 'manager'}\nisApproved: true`);
 
     return userProfile;
   } catch (error: any) {
@@ -877,8 +869,6 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       path: `users/${user.uid}`,
       errorCode: error?.code,
       errorMessage: error?.message,
-      currentUserUid: user.uid,
-      currentUserEmail: user.email,
     });
     return null;
   }
@@ -903,13 +893,13 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 
 /**
  * Get all user profiles (Admin only)
- * Merges users collection with authorized_users collection so pre-registered staff are visible
+ * Merges users collection with userInvites and authorized_users collections so all staff are visible
  */
 export async function getAllUserProfiles(): Promise<UserProfile[]> {
   try {
-    const [usersSnap, authUsers] = await Promise.all([
+    const [usersSnap, invites] = await Promise.all([
       getDocs(query(collection(db, "users"), orderBy("createdAt", "desc"))).catch(() => null),
-      getAllAuthorizedUsers().catch(() => []),
+      getAllUserInvites().catch(() => []),
     ]);
 
     const usersMap = new Map<string, UserProfile>();
@@ -926,30 +916,32 @@ export async function getAllUserProfiles(): Promise<UserProfile[]> {
       });
     }
 
-    // 2. Merge with authorized_users
-    for (const authU of authUsers) {
-      const email = authU.email.toLowerCase().trim();
+    // 2. Merge with userInvites
+    for (const inv of invites) {
+      const email = inv.email.toLowerCase().trim();
       const existing = usersMap.get(email);
       if (existing) {
         usersMap.set(email, {
           ...existing,
-          role: authU.role || existing.role,
-          status: authU.status || existing.status,
-          schoolId: authU.schoolId !== undefined ? authU.schoolId : existing.schoolId,
-          schoolName: authU.schoolName || existing.schoolName,
+          role: inv.role || existing.role,
+          status: inv.status || existing.status,
+          schoolId: inv.schoolId !== undefined ? inv.schoolId : existing.schoolId,
+          schoolName: inv.schoolName || existing.schoolName,
+          lastLoginAt: inv.lastLoginAt || existing.lastLoginAt,
         });
       } else {
         usersMap.set(email, {
-          uid: `auth_${email.replace(/[^a-z0-9]/g, '_')}`,
-          displayName: authU.displayName,
-          email: authU.email,
+          uid: `invite_${getEmailKey(email)}`,
+          displayName: inv.displayName,
+          email: inv.email,
           photoURL: null,
-          role: authU.role,
-          status: authU.status,
-          schoolId: authU.schoolId,
-          schoolName: authU.schoolName || null,
-          createdAt: authU.createdAt,
-          updatedAt: authU.updatedAt,
+          role: inv.role,
+          status: inv.status || 'invited',
+          schoolId: inv.schoolId,
+          schoolName: inv.schoolName || null,
+          createdAt: inv.createdAt,
+          updatedAt: inv.updatedAt,
+          lastLoginAt: inv.lastLoginAt || null,
         });
       }
     }
@@ -965,7 +957,7 @@ export async function getAllUserProfiles(): Promise<UserProfile[]> {
 
 /**
  * Create user profile by Admin (Admin only)
- * Stores in authorized_users and users collection
+ * Stores in userInvites, authorized_users, and users collection
  */
 export async function createUserProfileByAdmin(
   profile: UserProfile
@@ -974,13 +966,13 @@ export async function createUserProfileByAdmin(
     const cleanEmail = profile.email ? profile.email.trim().toLowerCase() : '';
     const now = new Date().toISOString();
 
-    // 1. Save to authorized_users first
+    // 1. Save to userInvites & authorized_users
     if (cleanEmail) {
-      await createAuthorizedUser({
+      await createUserInvite({
         email: cleanEmail,
         displayName: profile.displayName || cleanEmail.split('@')[0],
         role: profile.role || 'manager',
-        status: profile.status || 'active',
+        status: profile.status || 'invited',
         schoolId: profile.schoolId || null,
         schoolName: profile.schoolName || null,
         createdAt: profile.createdAt || now,
@@ -1026,10 +1018,10 @@ export async function updateUserProfileByAdmin(
       } catch (_) {}
     }
 
-    // Update authorized_users
+    // Update userInvites and authorized_users
     if (targetEmail) {
       const cleanEmail = targetEmail.trim().toLowerCase();
-      await updateAuthorizedUser(cleanEmail, {
+      await updateUserInvite(cleanEmail, {
         ...(updates.role ? { role: updates.role } : {}),
         ...(updates.status ? { status: updates.status } : {}),
         ...(updates.schoolId !== undefined ? { schoolId: updates.schoolId } : {}),
@@ -1039,7 +1031,7 @@ export async function updateUserProfileByAdmin(
     }
 
     // Update users/{uid} if real uid
-    if (!uid.startsWith("auth_")) {
+    if (!uid.startsWith("auth_") && !uid.startsWith("invite_")) {
       const updateData = {
         ...updates,
         updatedAt: now,
@@ -1071,13 +1063,13 @@ export async function deleteUserProfileByAdmin(uid: string, email?: string | nul
       } catch (_) {}
     }
 
-    // Delete from authorized_users
+    // Delete from userInvites and authorized_users
     if (targetEmail) {
-      await deleteAuthorizedUser(targetEmail.trim().toLowerCase());
+      await deleteUserInvite(targetEmail.trim().toLowerCase());
     }
 
     // Delete from users collection
-    if (!uid.startsWith("auth_")) {
+    if (!uid.startsWith("auth_") && !uid.startsWith("invite_")) {
       const userDocRef = doc(db, "users", uid);
       await deleteDoc(userDocRef);
     }

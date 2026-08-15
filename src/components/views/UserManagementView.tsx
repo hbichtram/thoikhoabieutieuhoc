@@ -575,7 +575,12 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                         {user.status === 'active' ? (
                           <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2.5 py-1 rounded-full font-bold text-[11px]">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            <span>Hoạt động</span>
+                            <span>Đang hoạt động</span>
+                          </span>
+                        ) : user.status === 'invited' ? (
+                          <span className="inline-flex items-center gap-1 bg-sky-50 text-sky-700 border border-sky-200/80 px-2.5 py-1 rounded-full font-bold text-[11px]" title="Đã cấp quyền qua Gmail, tự kích hoạt khi cán bộ đăng nhập Google">
+                            <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+                            <span>Đã cấp quyền</span>
                           </span>
                         ) : user.status === 'pending' ? (
                           <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200/80 px-2.5 py-1 rounded-full font-bold text-[11px]">

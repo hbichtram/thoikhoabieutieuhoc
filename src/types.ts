@@ -149,7 +149,21 @@ export interface ScheduleStats {
 
 // User Roles & Permissions
 export type UserRole = 'admin' | 'manager';
-export type UserStatus = 'pending' | 'active' | 'disabled';
+export type UserStatus = 'invited' | 'active' | 'disabled' | 'pending';
+
+export interface UserInvite {
+  email: string;
+  displayName: string;
+  name?: string | null;
+  role: UserRole;
+  status: UserStatus;
+  schoolId: string | null;
+  schoolName?: string | null;
+  uid?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastLoginAt?: string | null;
+}
 
 export interface AuthorizedUser {
   email: string;
@@ -161,6 +175,7 @@ export interface AuthorizedUser {
   schoolName?: string | null;
   createdAt: string;
   updatedAt: string;
+  lastLoginAt?: string | null;
 }
 
 export interface UserSummary {
@@ -181,6 +196,7 @@ export interface UserProfile {
   schoolName?: string | null;
   createdAt: string;
   updatedAt: string;
+  lastLoginAt?: string | null;
 }
 
 // School Entity

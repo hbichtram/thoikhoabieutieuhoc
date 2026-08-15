@@ -37,7 +37,30 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.schoolId == schoolId;
     }
 
-    // 1. Authorized Users Collection: authorized_users/{emailKey}
+    // 1. User Invites Collection: userInvites/{emailKey}
+    match /userInvites/{emailKey} {
+      // System Admin has full permissions (create, read, update, delete)
+      allow read, write: if isSystemAdmin();
+
+      // Authenticated user can ONLY read/get their own invite matching their Google token email
+      allow get: if isAuthenticated() && request.auth.token.email != null && (
+        emailKey == request.auth.token.email.lower() ||
+        emailKey == request.auth.token.email ||
+        (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
+      );
+
+      // Authenticated user can update their invite to link their Google UID upon first login
+      allow update: if isAuthenticated() && request.auth.token.email != null && (
+        emailKey == request.auth.token.email.lower() ||
+        emailKey == request.auth.token.email ||
+        (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
+      );
+
+      // Deny collection-level listing for regular users (prevents email harvesting)
+      allow list: if isSystemAdmin();
+    }
+
+    // 2. Authorized Users Collection (Legacy & Dual-Sync): authorized_users/{emailKey}
     match /authorized_users/{emailKey} {
       // System Admin has full permissions (create, read, update, delete)
       allow read, write: if isSystemAdmin();
@@ -45,6 +68,13 @@ service cloud.firestore {
       // Regular user can ONLY get/read their own pre-authorization document matching their Google Auth token email
       allow get: if isAuthenticated() && request.auth.token.email != null && (
         emailKey == request.auth.token.email.lower() ||
+        emailKey == request.auth.token.email ||
+        (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
+      );
+
+      allow update: if isAuthenticated() && request.auth.token.email != null && (
+        emailKey == request.auth.token.email.lower() ||
+        emailKey == request.auth.token.email ||
         (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
       );
 
