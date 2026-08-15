@@ -417,10 +417,10 @@ export const Header: React.FC<HeaderProps> = ({
                   <span>Trường phân quyền:</span>
                 </div>
                 <div className="font-bold text-slate-900 text-sm">
-                  {currentSchool?.name || userProfile?.schoolName || 'Chưa xác định'}
+                  {currentSchool?.name || (userProfile?.role === 'admin' ? 'Tất cả trường (Admin)' : 'Chưa gán trường')}
                 </div>
                 <div className="font-mono text-[11px] text-blue-700">
-                  Mã trường: <strong>{currentSchool?.id || userProfile?.schoolId || 'N/A'}</strong>
+                  Mã trường: <strong>{currentSchool?.id || (userProfile?.role === 'admin' ? 'Admin' : 'Chưa có')}</strong>
                 </div>
               </div>
 

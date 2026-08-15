@@ -410,7 +410,7 @@ export const SchoolManagementView: React.FC<SchoolManagementViewProps> = ({
                   disabled={!!editingSchool}
                   value={schoolIdInput}
                   onChange={(e) => setSchoolIdInput(e.target.value)}
-                  placeholder="e.g. school_003 hoặc th_chuvanan"
+                  placeholder="e.g. th_lequydon hoặc th_nguyendu"
                   className={`w-full px-3 py-2.5 rounded-xl border border-slate-200 font-mono text-slate-800 font-bold focus:ring-2 focus:ring-blue-500 focus:outline-hidden ${
                     editingSchool ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-slate-50'
                   }`}

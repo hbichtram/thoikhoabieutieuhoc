@@ -86,6 +86,7 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [schools, setSchools] = useState<School[]>([]);
   const [activeSchoolId, setActiveSchoolId] = useState<string>('');
+  const [schoolLoadError, setSchoolLoadError] = useState<'unassigned' | 'not_found' | null>(null);
 
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -118,6 +119,68 @@ export default function App() {
     }
   }, []);
 
+  // Resolve and apply school strictly from userProfile & schools collection
+  const resolveAndApplySchool = useCallback(async (profile: UserProfile | null) => {
+    if (!profile) {
+      setSchools([]);
+      setActiveSchoolId('');
+      setSchoolLoadError(null);
+      return;
+    }
+
+    console.log(`[SCHOOL RESOLUTION]\nuid: ${profile.uid}\nrole: ${profile.role}\nschoolId: ${profile.schoolId || 'none'}`);
+
+    if (profile.role === 'admin') {
+      setSchoolLoadError(null);
+      const schoolList = await getAllSchools();
+      setSchools(schoolList);
+      let targetSchoolId = '';
+      if (profile.schoolId && schoolList.some((s) => s.id === profile.schoolId)) {
+        targetSchoolId = profile.schoolId;
+      } else if (schoolList.length > 0) {
+        targetSchoolId = schoolList[0].id;
+      }
+      setActiveSchoolId(targetSchoolId);
+
+      const selectedSchool = schoolList.find((s) => s.id === targetSchoolId);
+      if (selectedSchool) {
+        console.log(`[SCHOOL DOCUMENT]\npath: schools/${selectedSchool.id}\nexists: true\nname: ${selectedSchool.name}`);
+        console.log(`[SCHOOL DISPLAY]\nschoolId: ${selectedSchool.id}\nschoolName: ${selectedSchool.name}`);
+      } else {
+        console.log(`[SCHOOL DOCUMENT]\npath: none\nexists: false\nname: none`);
+        console.log(`[SCHOOL DISPLAY]\nschoolId: none\nschoolName: none`);
+      }
+    } else if (profile.role === 'manager' && profile.status === 'active') {
+      if (!profile.schoolId || !profile.schoolId.trim()) {
+        setSchools([]);
+        setActiveSchoolId('');
+        setSchoolLoadError('unassigned');
+        console.log(`[SCHOOL DOCUMENT]\npath: none\nexists: false\nname: none`);
+        console.log(`[SCHOOL DISPLAY]\nschoolId: none\nschoolName: none`);
+      } else {
+        const cleanSchoolId = profile.schoolId.trim();
+        const schoolDoc = await getSchool(cleanSchoolId);
+        if (schoolDoc) {
+          setSchools([schoolDoc]);
+          setActiveSchoolId(schoolDoc.id);
+          setSchoolLoadError(null);
+          console.log(`[SCHOOL DOCUMENT]\npath: schools/${schoolDoc.id}\nexists: true\nname: ${schoolDoc.name}`);
+          console.log(`[SCHOOL DISPLAY]\nschoolId: ${schoolDoc.id}\nschoolName: ${schoolDoc.name}`);
+        } else {
+          setSchools([]);
+          setActiveSchoolId('');
+          setSchoolLoadError('not_found');
+          console.log(`[SCHOOL DOCUMENT]\npath: schools/${cleanSchoolId}\nexists: false\nname: none`);
+          console.log(`[SCHOOL DISPLAY]\nschoolId: ${cleanSchoolId}\nschoolName: none`);
+        }
+      }
+    } else {
+      setSchools([]);
+      setActiveSchoolId('');
+      setSchoolLoadError(null);
+    }
+  }, []);
+
   // Refresh User Profile
   const refreshProfile = useCallback(async () => {
     if (!user) return;
@@ -125,29 +188,12 @@ export default function App() {
       const profile = await getUserProfile(user.uid);
       if (profile) {
         setUserProfile(profile);
-        if (profile.role === 'admin') {
-          const schoolList = await getAllSchools();
-          setSchools(schoolList);
-          if (profile.schoolId) {
-            setActiveSchoolId(profile.schoolId);
-          } else if (schoolList.length > 0) {
-            setActiveSchoolId(schoolList[0].id);
-          }
-        } else if (profile.role === 'manager' && profile.status === 'active' && profile.schoolId) {
-          setActiveSchoolId(profile.schoolId);
-          const mySchool = await getSchool(profile.schoolId);
-          if (mySchool) {
-            setSchools([mySchool]);
-          }
-        } else {
-          setActiveSchoolId('');
-          setSchools([]);
-        }
+        await resolveAndApplySchool(profile);
       }
     } catch (e) {
       console.error('Error refreshing user profile:', e);
     }
-  }, [user]);
+  }, [user, resolveAndApplySchool]);
 
   // 1. Listen to Firebase Authentication State & sync user profile
   useEffect(() => {
@@ -157,37 +203,7 @@ export default function App() {
         try {
           const profile = await syncUserProfile(currentUser);
           setUserProfile(profile);
-
-          if (profile?.role === 'admin') {
-            // Admin can fetch all schools
-            const schoolList = await getAllSchools();
-            setSchools(schoolList);
-            if (profile.schoolId) {
-              setActiveSchoolId(profile.schoolId);
-            } else if (schoolList.length > 0) {
-              setActiveSchoolId(schoolList[0].id);
-            }
-          } else if (profile?.role === 'manager' && profile.status === 'active' && profile.schoolId) {
-            // Manager only fetches their own specific school document
-            console.log(`[MANAGER SCHOOL LOAD]\npath: schools/${profile.schoolId}`);
-            setActiveSchoolId(profile.schoolId);
-            const mySchool = await getSchool(profile.schoolId);
-            if (mySchool) {
-              setSchools([mySchool]);
-            } else {
-              setSchools([
-                {
-                  id: profile.schoolId,
-                  name: profile.schoolName || profile.schoolId,
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                },
-              ]);
-            }
-          } else {
-            setActiveSchoolId('');
-            setSchools([]);
-          }
+          await resolveAndApplySchool(profile);
         } catch (err) {
           console.error('[AUTH ERROR] Sync user profile failed:', err);
         }
@@ -195,6 +211,7 @@ export default function App() {
         setUserProfile(null);
         setActiveSchoolId('');
         setSchools([]);
+        setSchoolLoadError(null);
         loadedSchoolIdRef.current = null;
         activeRequestIdRef.current += 1;
         setSyncError(null);
@@ -204,7 +221,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [resolveAndApplySchool]);
 
   // 2. Load Firestore Timetable Data when auth is active and activeSchoolId changes
   useEffect(() => {
@@ -655,35 +672,7 @@ export default function App() {
         setUser(loggedInUser);
         const profile = await syncUserProfile(loggedInUser);
         setUserProfile(profile);
-
-        if (profile?.role === 'admin') {
-          const schoolList = await getAllSchools();
-          setSchools(schoolList);
-          if (profile.schoolId) {
-            setActiveSchoolId(profile.schoolId);
-          } else if (schoolList.length > 0) {
-            setActiveSchoolId(schoolList[0].id);
-          }
-        } else if (profile?.role === 'manager' && profile.status === 'active' && profile.schoolId) {
-          console.log(`[MANAGER SCHOOL LOAD]\npath: schools/${profile.schoolId}`);
-          setActiveSchoolId(profile.schoolId);
-          const mySchool = await getSchool(profile.schoolId);
-          if (mySchool) {
-            setSchools([mySchool]);
-          } else {
-            setSchools([
-              {
-                id: profile.schoolId,
-                name: profile.schoolName || profile.schoolId,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              },
-            ]);
-          }
-        } else {
-          setActiveSchoolId('');
-          setSchools([]);
-        }
+        await resolveAndApplySchool(profile);
       }
     } catch (error: any) {
       console.error('[FIREBASE AUTH] Google Login Failed:', error);
@@ -709,6 +698,7 @@ export default function App() {
     setUserProfile(null);
     setActiveSchoolId('');
     setSchools([]);
+    setSchoolLoadError(null);
     activeRequestIdRef.current += 1;
     setSyncError(null);
     setLoginError(null);
@@ -720,6 +710,12 @@ export default function App() {
     if (newSchoolId === activeSchoolId) return;
     loadedSchoolIdRef.current = null;
     setActiveSchoolId(newSchoolId);
+    const selectedSchool = schools.find((s) => s.id === newSchoolId);
+    if (selectedSchool) {
+      console.log(`[SCHOOL RESOLUTION]\nuid: ${userProfile?.uid}\nrole: admin\nschoolId: ${selectedSchool.id}`);
+      console.log(`[SCHOOL DOCUMENT]\npath: schools/${selectedSchool.id}\nexists: true\nname: ${selectedSchool.name}`);
+      console.log(`[SCHOOL DISPLAY]\nschoolId: ${selectedSchool.id}\nschoolName: ${selectedSchool.name}`);
+    }
   };
 
   // 1. Loading screen while initializing auth
@@ -769,13 +765,14 @@ export default function App() {
     );
   }
 
-  // 5. Manager is active but not assigned to any school yet
-  if (userProfile.role === 'manager' && !userProfile.schoolId) {
+  // 5. Manager is active but has school error (unassigned or not found in Firestore)
+  if (userProfile.role === 'manager' && userProfile.status === 'active' && (schoolLoadError || !activeSchoolId)) {
     return (
       <UnassignedSchoolView
         userProfile={userProfile}
         onRefresh={refreshProfile}
         onLogout={handleLogout}
+        reason={schoolLoadError || 'unassigned'}
       />
     );
   }
@@ -791,16 +788,7 @@ export default function App() {
     );
   }
 
-  const currentSchool =
-    schools.find((s) => s.id === activeSchoolId) ||
-    (userProfile?.schoolId
-      ? {
-          id: userProfile.schoolId,
-          name: userProfile.schoolName || userProfile.schoolId,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        }
-      : null);
+  const currentSchool = schools.find((s) => s.id === activeSchoolId) || null;
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-900 antialiased selection:bg-blue-500 selection:text-white">

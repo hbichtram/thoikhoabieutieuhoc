@@ -468,25 +468,6 @@ export function isSystemAdminUser(user?: { uid?: string; email?: string | null }
   return false;
 }
 
-export const DEFAULT_INITIAL_SCHOOLS: School[] = [
-  {
-    id: "school_001",
-    name: "Trường Tiểu học Chu Văn An",
-    code: "CVA",
-    address: "Hà Nội",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "school_002",
-    name: "Trường Tiểu học Nguyễn Du",
-    code: "THND",
-    address: "TP. Hồ Chí Minh",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
-
 /**
  * Collection: authorized_users/{emailKey}
  * Where emailKey is email.toLowerCase().trim()

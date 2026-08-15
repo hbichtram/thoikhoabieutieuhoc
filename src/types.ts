@@ -183,7 +183,7 @@ export interface UserProfile {
 
 // School Entity
 export interface School {
-  id: string; // e.g. "school_001", "th_nguyendu"
+  id: string; // e.g. "th_lequydon", "th_nguyendu"
   name: string; // e.g. "Trường Tiểu học Nguyễn Du"
   code: string; // e.g. "THND"
   address?: string;

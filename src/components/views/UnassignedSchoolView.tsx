@@ -7,6 +7,7 @@ interface UnassignedSchoolViewProps {
   onRefresh: () => void;
   onLogout: () => void;
   isRefreshing?: boolean;
+  reason?: 'unassigned' | 'not_found';
 }
 
 export const UnassignedSchoolView: React.FC<UnassignedSchoolViewProps> = ({
@@ -14,7 +15,10 @@ export const UnassignedSchoolView: React.FC<UnassignedSchoolViewProps> = ({
   onRefresh,
   onLogout,
   isRefreshing = false,
+  reason = 'unassigned',
 }) => {
+  const isNotFound = reason === 'not_found';
+
   return (
     <div className="min-h-screen w-full bg-[#0b1329] flex items-center justify-center p-4 sm:p-6 text-slate-800 antialiased font-sans relative overflow-hidden">
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-amber-600/10 rounded-full blur-3xl pointer-events-none" />
@@ -26,10 +30,14 @@ export const UnassignedSchoolView: React.FC<UnassignedSchoolViewProps> = ({
             <School className="w-8 h-8 text-white" />
           </div>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-            ⚠️ Tài khoản chưa được gán trường
+            {isNotFound
+              ? '⚠️ Trường được gán cho tài khoản không tồn tại trong hệ thống'
+              : '⚠️ Tài khoản chưa được gán trường'}
           </h2>
           <p className="text-xs sm:text-sm text-amber-100 font-medium max-w-sm mx-auto">
-            Tài khoản đã kích hoạt nhưng cần được phân công vào trường học cụ thể
+            {isNotFound
+              ? `Mã trường "${userProfile?.schoolId || ''}" không tìm thấy trên hệ thống`
+              : 'Tài khoản đã kích hoạt nhưng cần được phân công vào trường học cụ thể'}
           </p>
         </div>
 
@@ -37,10 +45,12 @@ export const UnassignedSchoolView: React.FC<UnassignedSchoolViewProps> = ({
         <div className="p-6 sm:p-8 space-y-6">
           <div className="bg-amber-50/80 border border-amber-200/80 rounded-2xl p-4 text-xs text-amber-950 space-y-2 leading-relaxed">
             <p className="font-semibold text-amber-900 text-sm">
-              Chưa có mã trường học (schoolId)
+              {isNotFound ? 'Không tìm thấy dữ liệu trường học' : 'Chưa có mã trường học (schoolId)'}
             </p>
             <p className="text-slate-600">
-              Vui lòng liên hệ Quản trị viên hệ thống để được gán vào trường học của bạn trước khi bắt đầu xếp thời khóa biểu.
+              {isNotFound
+                ? `Hồ sơ của bạn được phân công mã trường "${userProfile?.schoolId}", tuy nhiên tài liệu trường này chưa tồn tại trong cơ sở dữ liệu. Vui lòng thông báo Quản trị viên để kiểm tra hoặc tạo trường.`
+                : 'Vui lòng liên hệ Quản trị viên hệ thống để được gán vào trường học của bạn trước khi bắt đầu xếp thời khóa biểu.'}
             </p>
           </div>
 
@@ -61,6 +71,14 @@ export const UnassignedSchoolView: React.FC<UnassignedSchoolViewProps> = ({
                   <span>{userProfile?.email || 'N/A'}</span>
                 </span>
               </div>
+              {userProfile?.schoolId && (
+                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                  <span className="text-slate-500">Mã trường gán:</span>
+                  <span className="font-mono font-bold text-amber-700 bg-amber-100/60 px-2 py-0.5 rounded">
+                    {userProfile.schoolId}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between py-1">
                 <span className="text-slate-500">Trạng thái:</span>
                 <span className="bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full text-[11px] flex items-center gap-1">
