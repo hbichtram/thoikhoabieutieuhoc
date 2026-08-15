@@ -169,10 +169,20 @@ export default function App() {
             }
           } else if (profile?.role === 'manager' && profile.status === 'active' && profile.schoolId) {
             // Manager only fetches their own specific school document
+            console.log(`[MANAGER SCHOOL LOAD]\npath: schools/${profile.schoolId}`);
             setActiveSchoolId(profile.schoolId);
             const mySchool = await getSchool(profile.schoolId);
             if (mySchool) {
               setSchools([mySchool]);
+            } else {
+              setSchools([
+                {
+                  id: profile.schoolId,
+                  name: profile.schoolName || profile.schoolId,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                },
+              ]);
             }
           } else {
             setActiveSchoolId('');
@@ -222,6 +232,10 @@ export default function App() {
     const currentReqId = ++activeRequestIdRef.current;
     setIsSyncing(true);
     setSyncError(null);
+
+    if (userProfile.role === 'manager') {
+      console.log(`[MANAGER TIMETABLE LOAD]\npath: schools/${targetSchoolId}/timetable_data/main`);
+    }
 
     loadSchoolTimetable(targetSchoolId)
       .then(async (remoteData) => {
@@ -276,11 +290,13 @@ export default function App() {
           console.warn('Could not fetch versions collection:', vErr);
         }
 
+        console.log('[FIRESTORE SYNC]\nstatus: SUCCESS');
         setFirestoreSyncSuccess('LOAD_SCHOOL_DATA_SUCCESS', currentReqId);
       })
       .catch((err) => {
         if (currentReqId !== activeRequestIdRef.current) return;
         const errMsg = err?.code || err?.message || String(err);
+        console.error('[FIRESTORE SYNC]\nstatus: ERROR', err);
         console.error(`[FIRESTORE READ FAILED] for school: ${targetSchoolId}`, err);
         setFirestoreSyncError(errMsg, 'LOAD_SCHOOL_DATA_FAILED', currentReqId);
       })
@@ -357,12 +373,14 @@ export default function App() {
         const success = await saveSchoolTimetable(targetSchoolId, fullData, context);
         if (currentReqId === activeRequestIdRef.current) {
           if (success) {
+            console.log('[FIRESTORE SYNC]\nstatus: SUCCESS');
             setFirestoreSyncSuccess(`WRITE_SUCCESS_${context}`, currentReqId);
           }
         }
       } catch (error: any) {
         if (currentReqId === activeRequestIdRef.current) {
           const errMsg = error?.code || error?.message || String(error);
+          console.error('[FIRESTORE SYNC]\nstatus: ERROR', error);
           setFirestoreSyncError(errMsg, `WRITE_ERROR_${context}`, currentReqId);
           console.error(`[FIRESTORE WRITE ERROR] (${context}):`, error);
         }
@@ -647,10 +665,20 @@ export default function App() {
             setActiveSchoolId(schoolList[0].id);
           }
         } else if (profile?.role === 'manager' && profile.status === 'active' && profile.schoolId) {
+          console.log(`[MANAGER SCHOOL LOAD]\npath: schools/${profile.schoolId}`);
           setActiveSchoolId(profile.schoolId);
           const mySchool = await getSchool(profile.schoolId);
           if (mySchool) {
             setSchools([mySchool]);
+          } else {
+            setSchools([
+              {
+                id: profile.schoolId,
+                name: profile.schoolName || profile.schoolId,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+            ]);
           }
         } else {
           setActiveSchoolId('');

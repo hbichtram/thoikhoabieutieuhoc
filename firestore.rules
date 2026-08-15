@@ -57,43 +57,31 @@ service cloud.firestore {
       // System Admin has full permissions (create, read, update, delete)
       allow read, create, update, delete: if isSystemAdmin();
 
-      // Regular user can get/read their own user profile by their Google UID
+      // Regular user can read, create, and update their own profile document with their Google UID
       allow get, read: if isAuthenticated() && request.auth.uid == userId;
-
-      // Regular user can create their own profile document with their Google UID
-      allow create: if isAuthenticated() && request.auth.uid == userId;
-
-      // Regular user can update their own non-sensitive profile fields
-      allow update: if isAuthenticated() && request.auth.uid == userId &&
-        (!('role' in request.resource.data) || request.resource.data.role == resource.data.role) &&
-        (!('status' in request.resource.data) || request.resource.data.status == resource.data.status) &&
-        (!('schoolId' in request.resource.data) || request.resource.data.schoolId == resource.data.schoolId);
+      allow create, update: if isAuthenticated() && request.auth.uid == userId;
     }
 
     // 3. Schools Collection: schools/{schoolId}
     match /schools/{schoolId} {
       // System Admin has full permissions (create, read, update, delete)
-      allow read, create, update, delete: if isSystemAdmin();
-
-      // Active Manager of this school can read their own school
-      allow read: if isManagerOfSchool(schoolId);
-
-      // Active Manager of this school can update their own school details
-      allow update: if isManagerOfSchool(schoolId);
+      allow create, delete: if isSystemAdmin();
+      allow read: if isSystemAdmin() || isManagerOfSchool(schoolId);
+      allow update: if isSystemAdmin() || isManagerOfSchool(schoolId);
 
       // Timetable data subcollection: schools/{schoolId}/timetable_data/{docId}
       match /timetable_data/{docId} {
-        allow read, create, update, delete: if isSystemAdmin() || isManagerOfSchool(schoolId);
+        allow read, write: if isSystemAdmin() || isManagerOfSchool(schoolId);
       }
 
       // Versions subcollection: schools/{schoolId}/versions/{versionId}
       match /versions/{versionId} {
-        allow read, create, update, delete: if isSystemAdmin() || isManagerOfSchool(schoolId);
+        allow read, write: if isSystemAdmin() || isManagerOfSchool(schoolId);
       }
 
       // Any other subcollections under school
       match /{allSubcollections=**} {
-        allow read, create, update, delete: if isSystemAdmin() || isManagerOfSchool(schoolId);
+        allow read, write: if isSystemAdmin() || isManagerOfSchool(schoolId);
       }
     }
 

@@ -491,48 +491,15 @@ export const DEFAULT_INITIAL_SCHOOLS: School[] = [
 export async function getAuthorizedUserByEmail(email: string): Promise<AuthorizedUser | null> {
   const cleanEmail = email.trim().toLowerCase();
   if (!cleanEmail) return null;
-  const now = new Date().toISOString();
   try {
     const authDocRef = doc(db, "authorized_users", cleanEmail);
     const snap = await getDoc(authDocRef);
     if (snap.exists()) {
       return snap.data() as AuthorizedUser;
     }
-
-    // Pre-authorized fallback seed for default manager accounts
-    if (cleanEmail === 'hongbichtram13@gmail.com') {
-      const defaultAuth: AuthorizedUser = {
-        email: 'hongbichtram13@gmail.com',
-        displayName: 'Hong Bich Tram',
-        role: 'manager',
-        status: 'active',
-        schoolId: 'school_001',
-        schoolName: 'Trường Tiểu học Chu Văn An',
-        createdAt: now,
-        updatedAt: now,
-      };
-      try {
-        await setDoc(authDocRef, defaultAuth, { merge: true });
-      } catch (_) {}
-      return defaultAuth;
-    }
-
     return null;
   } catch (err) {
     console.warn("[AUTH] Could not get authorized_users doc:", err);
-    // If error but email matches known default manager, allow graceful fallback
-    if (cleanEmail === 'hongbichtram13@gmail.com') {
-      return {
-        email: 'hongbichtram13@gmail.com',
-        displayName: 'Hong Bich Tram',
-        role: 'manager',
-        status: 'active',
-        schoolId: 'school_001',
-        schoolName: 'Trường Tiểu học Chu Văn An',
-        createdAt: now,
-        updatedAt: now,
-      };
-    }
     return null;
   }
 }
@@ -714,6 +681,11 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       await setDoc(userDocRef, userProfile, { merge: true });
     } catch (writeErr) {
       console.warn("[USER PROFILE] Could not write users/{uid}:", writeErr);
+    }
+
+    if (userProfile.role === 'manager') {
+      console.log(`[MANAGER AUTH]\nuid: ${user.uid}\nemail: ${user.email || ''}`);
+      console.log(`[MANAGER PROFILE]\nrole: ${userProfile.role}\nstatus: ${userProfile.status}\nschoolId: ${userProfile.schoolId || 'none'}`);
     }
 
     console.log("Final user profile:", userProfile);
@@ -1143,8 +1115,7 @@ export async function loadSchoolTimetable(schoolId: string): Promise<any | null>
 
   const cleanSchoolId = schoolId.trim();
   const timetablePath = `schools/${cleanSchoolId}/timetable_data/main`;
-  console.log(`[SCHOOL LOAD]\nschoolId: ${cleanSchoolId}`);
-  console.log(`[TIMETABLE LOAD]\npath: ${timetablePath}`);
+  console.log(`[MANAGER TIMETABLE LOAD]\npath: ${timetablePath}`);
 
   const docRef = doc(db, "schools", cleanSchoolId, "timetable_data", "main");
 
