@@ -185,7 +185,7 @@ export default function App() {
   const refreshProfile = useCallback(async () => {
     if (!user) return;
     try {
-      const profile = await getUserProfile(user.uid);
+      const profile = await syncUserProfile(user);
       if (profile) {
         setUserProfile(profile);
         await resolveAndApplySchool(profile);

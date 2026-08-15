@@ -555,16 +555,16 @@ export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise
   const cleanEmail = rawEmail.trim().toLowerCase();
   if (!cleanEmail) return null;
 
-  // 1. Check authorized_users collection doc
+  // 1. Check authorized_users collection doc by cleanEmail
   try {
     const authSnap = await getDoc(doc(db, "authorized_users", cleanEmail));
     if (authSnap.exists()) {
-      const data = authSnap.data() as AuthorizedUser;
+      const data = authSnap.data() as any;
       return {
         uid: `auth_${cleanEmail}`,
         email: cleanEmail,
-        displayName: data.displayName || cleanEmail.split('@')[0],
-        photoURL: null,
+        displayName: data.displayName || data.name || cleanEmail.split('@')[0],
+        photoURL: data.photoURL || null,
         role: data.role || 'manager',
         status: data.status || 'active',
         schoolId: data.schoolId || null,
@@ -574,51 +574,173 @@ export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise
       };
     }
   } catch (err) {
-    console.warn("[LOOKUP] Error checking authorized_users:", err);
+    console.warn("[LOOKUP] Error checking authorized_users by cleanEmail:", err);
   }
 
-  // 2. Query users collection by lowercase email
+  // 2. Check authorized_users by rawEmail if different
+  if (rawEmail !== cleanEmail) {
+    try {
+      const authSnapRaw = await getDoc(doc(db, "authorized_users", rawEmail.trim()));
+      if (authSnapRaw.exists()) {
+        const data = authSnapRaw.data() as any;
+        return {
+          uid: `auth_${cleanEmail}`,
+          email: cleanEmail,
+          displayName: data.displayName || data.name || cleanEmail.split('@')[0],
+          photoURL: data.photoURL || null,
+          role: data.role || 'manager',
+          status: data.status || 'active',
+          schoolId: data.schoolId || null,
+          schoolName: data.schoolName || null,
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt || new Date().toISOString(),
+        };
+      }
+    } catch (err) {
+      console.warn("[LOOKUP] Error checking authorized_users by rawEmail:", err);
+    }
+  }
+
+  // 3. Direct get users/{cleanEmail} or users/{rawEmail}
+  try {
+    const docSnapClean = await getDoc(doc(db, "users", cleanEmail));
+    if (docSnapClean.exists()) {
+      const data = docSnapClean.data() as any;
+      return {
+        uid: docSnapClean.id,
+        email: cleanEmail,
+        displayName: data.displayName || data.name || cleanEmail.split('@')[0],
+        photoURL: data.photoURL || null,
+        role: data.role || 'manager',
+        status: data.status || 'active',
+        schoolId: data.schoolId || null,
+        schoolName: data.schoolName || null,
+        createdAt: data.createdAt || new Date().toISOString(),
+        updatedAt: data.updatedAt || new Date().toISOString(),
+      };
+    }
+  } catch (_) {}
+
+  if (rawEmail !== cleanEmail) {
+    try {
+      const docSnapRaw = await getDoc(doc(db, "users", rawEmail.trim()));
+      if (docSnapRaw.exists()) {
+        const data = docSnapRaw.data() as any;
+        return {
+          uid: docSnapRaw.id,
+          email: cleanEmail,
+          displayName: data.displayName || data.name || cleanEmail.split('@')[0],
+          photoURL: data.photoURL || null,
+          role: data.role || 'manager',
+          status: data.status || 'active',
+          schoolId: data.schoolId || null,
+          schoolName: data.schoolName || null,
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt || new Date().toISOString(),
+        };
+      }
+    } catch (_) {}
+  }
+
+  // 4. Query users where email == cleanEmail
   try {
     const q1 = query(collection(db, "users"), where("email", "==", cleanEmail));
     const snap1 = await getDocs(q1);
     if (!snap1.empty) {
-      const docData = snap1.docs[0].data() as UserProfile;
+      const d = snap1.docs[0];
+      const docData = d.data() as any;
       return {
-        ...docData,
-        uid: snap1.docs[0].id,
+        uid: d.id,
+        email: cleanEmail,
+        displayName: docData.displayName || docData.name || cleanEmail.split('@')[0],
+        photoURL: docData.photoURL || null,
+        role: docData.role || 'manager',
+        status: docData.status || 'active',
+        schoolId: docData.schoolId || null,
+        schoolName: docData.schoolName || null,
+        createdAt: docData.createdAt || new Date().toISOString(),
+        updatedAt: docData.updatedAt || new Date().toISOString(),
       };
     }
   } catch (err) {
-    console.warn("[LOOKUP] Error querying users by lowercase email:", err);
+    console.warn("[LOOKUP] Error querying users by cleanEmail:", err);
   }
 
-  // 3. Query users collection by raw email (if case differs)
+  // 5. Query users where email == rawEmail
   if (rawEmail !== cleanEmail) {
     try {
       const q2 = query(collection(db, "users"), where("email", "==", rawEmail));
       const snap2 = await getDocs(q2);
       if (!snap2.empty) {
-        const docData = snap2.docs[0].data() as UserProfile;
+        const d = snap2.docs[0];
+        const docData = d.data() as any;
         return {
-          ...docData,
-          uid: snap2.docs[0].id,
+          uid: d.id,
+          email: cleanEmail,
+          displayName: docData.displayName || docData.name || cleanEmail.split('@')[0],
+          photoURL: docData.photoURL || null,
+          role: docData.role || 'manager',
+          status: docData.status || 'active',
+          schoolId: docData.schoolId || null,
+          schoolName: docData.schoolName || null,
+          createdAt: docData.createdAt || new Date().toISOString(),
+          updatedAt: docData.updatedAt || new Date().toISOString(),
         };
       }
     } catch (err) {
-      console.warn("[LOOKUP] Error querying users by raw email:", err);
+      console.warn("[LOOKUP] Error querying users by rawEmail:", err);
     }
   }
 
-  // 4. Check direct users/{cleanEmail} or users/{rawEmail}
+  // 6. Comprehensive scan over users collection (matches any doc where email equals cleanEmail case-insensitively)
   try {
-    const docSnap1 = await getDoc(doc(db, "users", cleanEmail));
-    if (docSnap1.exists()) {
-      return {
-        ...(docSnap1.data() as UserProfile),
-        uid: docSnap1.id,
-      };
+    const allUsersSnap = await getDocs(collection(db, "users"));
+    for (const docItem of allUsersSnap.docs) {
+      const data = docItem.data() as any;
+      const itemEmail = (data.email || '').trim().toLowerCase();
+      if (itemEmail && itemEmail === cleanEmail) {
+        return {
+          uid: docItem.id,
+          email: cleanEmail,
+          displayName: data.displayName || data.name || cleanEmail.split('@')[0],
+          photoURL: data.photoURL || null,
+          role: data.role || 'manager',
+          status: data.status || 'active',
+          schoolId: data.schoolId || null,
+          schoolName: data.schoolName || null,
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt || new Date().toISOString(),
+        };
+      }
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn("[LOOKUP] Error scanning all users collection:", err);
+  }
+
+  // 7. Comprehensive scan over authorized_users collection
+  try {
+    const allAuthSnap = await getDocs(collection(db, "authorized_users"));
+    for (const docItem of allAuthSnap.docs) {
+      const data = docItem.data() as any;
+      const itemEmail = (data.email || docItem.id || '').trim().toLowerCase();
+      if (itemEmail && itemEmail === cleanEmail) {
+        return {
+          uid: `auth_${cleanEmail}`,
+          email: cleanEmail,
+          displayName: data.displayName || data.name || cleanEmail.split('@')[0],
+          photoURL: data.photoURL || null,
+          role: data.role || 'manager',
+          status: data.status || 'active',
+          schoolId: data.schoolId || null,
+          schoolName: data.schoolName || null,
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt || new Date().toISOString(),
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("[LOOKUP] Error scanning authorized_users collection:", err);
+  }
 
   return null;
 }
@@ -637,7 +759,7 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
   const rawEmail = user.email || '';
   const email = rawEmail.toLowerCase().trim();
 
-  console.log(`[GOOGLE LOGIN]\nemail: ${rawEmail || 'none'}`);
+  console.log(`[GOOGLE LOGIN]\nuid: ${googleUid}\nemail: ${rawEmail || 'none'}`);
 
   const now = new Date().toISOString();
   const isAdmin = isSystemAdminUser(user);
@@ -664,60 +786,57 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         console.warn("[AUTH] Admin setDoc warning:", err);
       }
 
-      console.log(`[PROFILE LOOKUP]\nlookupByUid: FOUND (${googleUid})\nlookupByEmail: FOUND (${email})`);
-      console.log(`[PROFILE FOUND]\nuid: ${googleUid}\nemail: ${email}\nrole: admin\nstatus: active\nschoolId: none`);
-      console.log(`[AUTHORIZATION]\nisAdmin: true\nisManager: false\nisApproved: true`);
-      console.log(`[LOGIN RESULT]\nsuccess: true\nrole: admin\nschoolId: none`);
+      console.log(`[PROFILE BY UID]\nfound: true`);
+      console.log(`[PROFILE BY EMAIL]\nfound: true`);
+      console.log(`[PROFILE LINK]\noldUid: ${googleUid}\nnewUid: ${googleUid}\nemail: ${email}\nrole: admin\nstatus: active\nschoolId: none\nsuccess: true`);
+      console.log(`[FINAL AUTHORIZATION]\nisAdmin: true\nisManager: false\nisApproved: true\nschoolId: none`);
+      console.log(`[FINAL LOGIN RESULT]\nsuccess: true\nrole: admin\nschoolId: none\nschoolName: none`);
       return adminProfile;
     }
 
     // 2. Lookup by UID
-    let lookupByUidStatus = 'NOT_FOUND';
     let profileByUid: UserProfile | null = null;
     try {
       const userDocRef = doc(db, "users", googleUid);
       const userSnap = await getDoc(userDocRef);
       if (userSnap.exists()) {
         profileByUid = userSnap.data() as UserProfile;
-        lookupByUidStatus = `FOUND (${googleUid})`;
       }
     } catch (err) {
       console.warn("[PROFILE LOOKUP] Could not check users/{uid}:", err);
     }
+    console.log(`[PROFILE BY UID]\nfound: ${profileByUid ? 'true' : 'false'}`);
 
     // 3. Lookup by Email
-    let lookupByEmailStatus = 'NOT_FOUND';
     let profileByEmail: UserProfile | null = null;
     if (email) {
       profileByEmail = await findPreRegisteredProfileByEmail(rawEmail);
-      if (profileByEmail) {
-        lookupByEmailStatus = `FOUND (${profileByEmail.email || email})`;
-      }
     }
-
-    console.log(`[PROFILE LOOKUP]\nlookupByUid: ${lookupByUidStatus}\nlookupByEmail: ${lookupByEmailStatus}`);
+    console.log(`[PROFILE BY EMAIL]\nfound: ${profileByEmail ? 'true' : 'false'}`);
 
     // If neither was found
     if (!profileByUid && !profileByEmail) {
       console.warn(`[USER PROFILE] No registered profile found for email: ${email} or UID: ${googleUid}`);
-      console.log(`[AUTHORIZATION]\nisAdmin: false\nisManager: false\nisApproved: false`);
-      console.log(`[LOGIN RESULT]\nsuccess: false\nrole: none\nschoolId: none`);
+      console.log(`[FINAL AUTHORIZATION]\nisAdmin: false\nisManager: false\nisApproved: false\nschoolId: none`);
+      console.log(`[FINAL LOGIN RESULT]\nsuccess: false\nrole: none\nschoolId: none\nschoolName: none`);
       return null;
     }
 
     // 4. Resolve matched profile
     const baseSource = profileByEmail || profileByUid!;
+    const oldUid = profileByEmail ? profileByEmail.uid : googleUid;
     const isLinking = profileByEmail && profileByEmail.uid !== googleUid;
 
     const finalRole = baseSource.role || "manager";
     const finalStatus = baseSource.status || "active";
     const finalSchoolId = baseSource.schoolId || null;
     const finalSchoolName = baseSource.schoolName || null;
+    const finalDisplayName = baseSource.displayName || baseSource.name || user.displayName || email.split('@')[0] || "Cán bộ quản lý";
 
     const userDocRef = doc(db, "users", googleUid);
     const userProfile: UserProfile = {
       uid: googleUid,
-      displayName: user.displayName || baseSource.displayName || email.split('@')[0] || "Cán bộ quản lý",
+      displayName: finalDisplayName,
       email: email || baseSource.email,
       photoURL: user.photoURL || baseSource.photoURL || null,
       role: finalRole,
@@ -735,26 +854,21 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       console.warn("[USER PROFILE] Could not write users/{uid}:", writeErr);
     }
 
-    // Account link log & cleanup of old temporary ID if applicable
-    if (isLinking && profileByEmail) {
-      console.log(`[ACCOUNT LINK]\noldProfile: ${profileByEmail.uid}\nnewUid: ${googleUid}\nsuccess: true`);
-      if (profileByEmail.uid.startsWith("user_")) {
-        try {
-          await deleteDoc(doc(db, "users", profileByEmail.uid));
-        } catch (_) {}
-      }
-    } else {
-      console.log(`[ACCOUNT LINK]\noldProfile: ${profileByUid ? googleUid : 'none'}\nnewUid: ${googleUid}\nsuccess: true`);
-    }
+    // Log profile link
+    console.log(`[PROFILE LINK]\noldUid: ${oldUid}\nnewUid: ${googleUid}\nemail: ${email}\nrole: ${finalRole}\nstatus: ${finalStatus}\nschoolId: ${finalSchoolId || 'none'}\nsuccess: true`);
 
-    // Print Profile Found
-    console.log(`[PROFILE FOUND]\nuid: ${userProfile.uid}\nemail: ${userProfile.email || email}\nrole: ${userProfile.role}\nstatus: ${userProfile.status}\nschoolId: ${userProfile.schoolId || 'none'}`);
+    // Cleanup old temporary ID if applicable
+    if (isLinking && profileByEmail && profileByEmail.uid.startsWith("user_")) {
+      try {
+        await deleteDoc(doc(db, "users", profileByEmail.uid));
+      } catch (_) {}
+    }
 
     const isManagerRole = userProfile.role === 'manager';
     const isApprovedStatus = userProfile.status === 'active';
 
-    console.log(`[AUTHORIZATION]\nisAdmin: false\nisManager: ${isManagerRole}\nisApproved: ${isApprovedStatus}`);
-    console.log(`[LOGIN RESULT]\nsuccess: ${isApprovedStatus}\nrole: ${userProfile.role}\nschoolId: ${userProfile.schoolId || 'none'}`);
+    console.log(`[FINAL AUTHORIZATION]\nisAdmin: false\nisManager: ${isManagerRole}\nisApproved: ${isApprovedStatus}\nschoolId: ${finalSchoolId || 'none'}`);
+    console.log(`[FINAL LOGIN RESULT]\nsuccess: ${isApprovedStatus}\nrole: ${userProfile.role}\nschoolId: ${finalSchoolId || 'none'}\nschoolName: ${finalSchoolName || 'none'}`);
 
     return userProfile;
   } catch (error: any) {

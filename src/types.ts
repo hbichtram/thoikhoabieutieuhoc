@@ -154,6 +154,7 @@ export type UserStatus = 'pending' | 'active' | 'disabled';
 export interface AuthorizedUser {
   email: string;
   displayName: string;
+  name?: string | null;
   role: UserRole;
   status: UserStatus;
   schoolId: string | null;
@@ -171,6 +172,7 @@ export interface UserSummary {
 export interface UserProfile {
   uid: string;
   displayName: string | null;
+  name?: string | null;
   email: string | null;
   photoURL?: string | null;
   role: UserRole;
