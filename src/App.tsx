@@ -149,39 +149,39 @@ export default function App() {
 
       const selectedSchool = schoolList.find((s) => s.id === targetSchoolId);
       if (selectedSchool) {
-        console.log(`[SCHOOL] Requested:\nschools/${selectedSchool.id}`);
-        console.log(`[SCHOOL] Exists: true`);
-        console.log(`[SCHOOL] Name: ${selectedSchool.name}`);
+        console.log(`[SCHOOL] Requested school document:\nschools/${selectedSchool.id}`);
+        console.log(`[SCHOOL] Document exists:\ntrue`);
+        console.log(`[SCHOOL] School name:\n${selectedSchool.name}`);
       } else {
-        console.log(`[SCHOOL] Requested:\nnone`);
-        console.log(`[SCHOOL] Exists: false`);
-        console.log(`[SCHOOL] Name: none`);
+        console.log(`[SCHOOL] Requested school document:\nnone`);
+        console.log(`[SCHOOL] Document exists:\nfalse`);
+        console.log(`[SCHOOL] School name:\nnone`);
       }
     } else if (profile.role === 'manager' && profile.status === 'active') {
       if (!profile.schoolId || !profile.schoolId.trim()) {
         setSchools([]);
         setActiveSchoolId('');
         setSchoolLoadError('unassigned');
-        console.log(`[SCHOOL] Requested:\nnone`);
-        console.log(`[SCHOOL] Exists: false`);
-        console.log(`[SCHOOL] Name: none`);
+        console.log(`[SCHOOL] Requested school document:\nnone`);
+        console.log(`[SCHOOL] Document exists:\nfalse`);
+        console.log(`[SCHOOL] School name:\nnone`);
       } else {
         const cleanSchoolId = profile.schoolId.trim();
-        console.log(`[SCHOOL] Requested:\nschools/${cleanSchoolId}`);
+        console.log(`[SCHOOL] Requested school document:\nschools/${cleanSchoolId}`);
         try {
           const schoolDoc = await getSchool(cleanSchoolId);
           if (schoolDoc) {
             setSchools([schoolDoc]);
             setActiveSchoolId(schoolDoc.id);
             setSchoolLoadError(null);
-            console.log(`[SCHOOL] Exists: true`);
-            console.log(`[SCHOOL] Name: ${schoolDoc.name}`);
+            console.log(`[SCHOOL] Document exists:\ntrue`);
+            console.log(`[SCHOOL] School name:\n${schoolDoc.name}`);
           } else {
             setSchools([]);
             setActiveSchoolId('');
             setSchoolLoadError('not_found');
-            console.log(`[SCHOOL] Exists: false`);
-            console.log(`[SCHOOL] Name: none`);
+            console.log(`[SCHOOL] Document exists:\nfalse`);
+            console.log(`[SCHOOL] School name:\nnone`);
           }
         } catch (err: any) {
           console.error(`[SCHOOL LOAD ERROR]`, err);
@@ -189,21 +189,21 @@ export default function App() {
           setActiveSchoolId('');
           if (err?.code === 'permission-denied') {
             setSchoolLoadError('permission_denied');
-            console.log(`[SCHOOL] Exists: permission-denied`);
+            console.log(`[SCHOOL] Document exists:\nfalse (permission-denied)`);
           } else {
             setSchoolLoadError('not_found');
-            console.log(`[SCHOOL] Exists: false`);
+            console.log(`[SCHOOL] Document exists:\nfalse`);
           }
-          console.log(`[SCHOOL] Name: none`);
+          console.log(`[SCHOOL] School name:\nnone`);
         }
       }
     } else {
       setSchools([]);
       setActiveSchoolId('');
       setSchoolLoadError(null);
-      console.log(`[SCHOOL] Requested:\nnone`);
-      console.log(`[SCHOOL] Exists: false`);
-      console.log(`[SCHOOL] Name: none`);
+      console.log(`[SCHOOL] Requested school document:\nnone`);
+      console.log(`[SCHOOL] Document exists:\nfalse`);
+      console.log(`[SCHOOL] School name:\nnone`);
     }
   }, []);
 

@@ -461,10 +461,11 @@ export async function deleteTimetableVersionFromFirestore(
 export const ADMIN_EMAIL = "tram.ai.ctst@gmail.com";
 export const ADMIN_UID = "CDDP2wg0tWb1E01arXBouCfd4ZP2";
 
-export function isSystemAdminUser(user?: { uid?: string; email?: string | null } | null): boolean {
+export function isSystemAdminUser(user?: { uid?: string; email?: string | null; role?: string } | null): boolean {
   if (!user) return false;
   if (user.uid && user.uid === ADMIN_UID) return true;
   if (user.email && user.email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) return true;
+  if ((user as any).role === 'admin' || (user as any).role === 'owner' || (user as any).role === 'system_admin') return true;
   return false;
 }
 
@@ -808,14 +809,18 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
   const now = new Date().toISOString();
   const isAdmin = isSystemAdminUser(user);
 
-  console.log(`[AUTH] Firebase UID: ${googleUid}`);
-  console.log(`[AUTH] Firebase Email: ${cleanEmail || 'none'}`);
-  console.log(`[PROFILE] Looking for:\nusers/${googleUid}`);
+  console.log(`[AUTH] Firebase UID:\n${googleUid}`);
+  console.log(`[AUTH] Email:\n${cleanEmail || 'none'}`);
+  console.log(`[PROFILE] Profile lookup:\nusers/${googleUid}`);
 
   try {
     // 1. If System Admin -> full admin access
     if (isAdmin) {
-      console.log(`[PROFILE] UID document exists: true`);
+      console.log(`[ADMIN] UID:\n${googleUid}`);
+      console.log(`[ADMIN] Email:\n${cleanEmail}`);
+      console.log(`[ADMIN] Role:\nowner`);
+      console.log(`[ADMIN] IsSystemAdmin:\ntrue`);
+
       const adminProfile: UserProfile = {
         uid: googleUid,
         displayName: user.displayName || cleanEmail.split('@')[0] || "Admin Hệ Thống",
@@ -836,10 +841,11 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         console.warn("[AUTH] Admin setDoc warning:", err);
       }
 
-      console.log(`[PROFILE] Resolved profile document:\nusers/${googleUid}`);
-      console.log(`[PROFILE] Resolved UID: ${googleUid}`);
-      console.log(`[PROFILE] Role: admin`);
-      console.log(`[PROFILE] School ID: none`);
+      console.log(`[PROFILE] Profile UID:\n${googleUid}`);
+      console.log(`[PROFILE] Profile email:\n${cleanEmail || 'none'}`);
+      console.log(`[PROFILE] Role:\nadmin`);
+      console.log(`[PROFILE] School ID:\nnone`);
+      console.log(`[PROFILE] Status:\nactive`);
       return adminProfile;
     }
 
@@ -871,8 +877,6 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
 
     // 4. Case A: Profile document already exists in users/{googleUid}
     if (existingProfile) {
-      console.log(`[PROFILE] UID document exists: true`);
-
       // If Admin updated a pending assignment while user was offline
       if (preRegistered) {
         const pendingData = preRegistered.data;
@@ -889,6 +893,9 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         try {
           await setDoc(doc(db, "users", googleUid), existingProfile, { merge: true });
           await deletePendingUser(cleanEmail);
+          if (preRegistered.sourceCollection === "users" && preRegistered.sourceDocId && preRegistered.sourceDocId !== googleUid) {
+            await deleteDoc(doc(db, "users", preRegistered.sourceDocId)).catch(() => {});
+          }
         } catch (_) {}
       } else {
         // Refresh login timestamp
@@ -901,18 +908,15 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         } catch (_) {}
       }
 
-      console.log(`[PROFILE] Resolved profile document:\nusers/${googleUid}`);
-      console.log(`[PROFILE] Resolved UID: ${existingProfile.uid || googleUid}`);
-      console.log(`[PROFILE] Role: ${existingProfile.role}`);
-      console.log(`[PROFILE] School ID: ${existingProfile.schoolId || 'none'}`);
+      console.log(`[PROFILE] Profile UID:\n${existingProfile.uid || googleUid}`);
+      console.log(`[PROFILE] Profile email:\n${existingProfile.email || cleanEmail}`);
+      console.log(`[PROFILE] Role:\n${existingProfile.role}`);
+      console.log(`[PROFILE] School ID:\n${existingProfile.schoolId || 'none'}`);
+      console.log(`[PROFILE] Status:\n${existingProfile.status}`);
       return existingProfile;
     }
 
     // 5. Case B: users/{googleUid} does NOT exist yet
-    console.log(`[PROFILE] UID document exists: false`);
-    console.log(`[PROFILE] Email fallback query:\nemail == ${cleanEmail}`);
-    console.log(`[PROFILE] Email match count: ${matchCount}`);
-
     if (preRegistered) {
       const pendingData = preRegistered.data;
       const isExplicitlyDisabled = pendingData.status === 'disabled';
@@ -942,19 +946,21 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         console.warn("[USER PROFILE] Write users/{uid} error:", writeErr);
       }
 
-      console.log(`[PROFILE] Resolved profile document:\nusers/${googleUid}`);
-      console.log(`[PROFILE] Resolved UID: ${canonicalProfile.uid}`);
-      console.log(`[PROFILE] Role: ${canonicalProfile.role}`);
-      console.log(`[PROFILE] School ID: ${canonicalProfile.schoolId || 'none'}`);
+      console.log(`[PROFILE] Profile UID:\n${canonicalProfile.uid}`);
+      console.log(`[PROFILE] Profile email:\n${canonicalProfile.email}`);
+      console.log(`[PROFILE] Role:\n${canonicalProfile.role}`);
+      console.log(`[PROFILE] School ID:\n${canonicalProfile.schoolId || 'none'}`);
+      console.log(`[PROFILE] Status:\n${canonicalProfile.status}`);
       return canonicalProfile;
     }
 
     // 6. Case C: Unauthorized (No existing profile in users/{uid} and no pending invitation found)
     console.warn(`[USER PROFILE] No authorized invite found for email: ${cleanEmail} (UID: ${googleUid})`);
-    console.log(`[PROFILE] Resolved profile document: none`);
-    console.log(`[PROFILE] Resolved UID: none`);
-    console.log(`[PROFILE] Role: none`);
-    console.log(`[PROFILE] School ID: none`);
+    console.log(`[PROFILE] Profile UID:\nnone`);
+    console.log(`[PROFILE] Profile email:\n${cleanEmail || 'none'}`);
+    console.log(`[PROFILE] Role:\nnone`);
+    console.log(`[PROFILE] School ID:\nnone`);
+    console.log(`[PROFILE] Status:\nunauthorized`);
     return null;
   } catch (error: any) {
     console.error("[USER PROFILE] Error syncing profile:", error);
@@ -1112,11 +1118,16 @@ export async function createUserProfileByAdmin(
     throw new Error('Email không hợp lệ.');
   }
 
-  console.log(`[STAFF CREATE] Start`);
-  console.log(`[STAFF CREATE] Email:\n${cleanEmail}`);
-  console.log(`[STAFF CREATE] Selected schoolId:\n${profile.schoolId || 'none'}`);
-  console.log(`[STAFF CREATE] Role:\n${profile.role}`);
-  console.log(`[STAFF CREATE] Status:\n${profile.status || 'active'}`);
+  const currentUser = auth.currentUser;
+  const adminRole = currentUser ? (isSystemAdminUser(currentUser) ? 'owner' : 'manager') : 'owner';
+
+  console.log(`[STAFF CREATE] START`);
+  console.log(`[STAFF CREATE] Admin UID:\n${currentUser?.uid || 'none'}`);
+  console.log(`[STAFF CREATE] Admin role:\n${adminRole}`);
+  console.log(`[STAFF CREATE] Target email:\n${cleanEmail}`);
+  console.log(`[STAFF CREATE] Target role:\n${profile.role}`);
+  console.log(`[STAFF CREATE] Target schoolId:\n${profile.schoolId || 'none'}`);
+  console.log(`[STAFF CREATE] Target status:\n${profile.status || 'active'}`);
 
   try {
     let resolvedSchoolName = profile.schoolName || null;
@@ -1129,7 +1140,7 @@ export async function createUserProfileByAdmin(
 
       if (!schoolSnap.exists()) {
         const errMsg = `Trường học với mã "${targetSchoolId}" không tồn tại trên hệ thống (schools/${targetSchoolId}). Không thể gán cán bộ vào trường này.`;
-        console.error(`[STAFF CREATE] ERROR: school_not_found\n[STAFF CREATE] ERROR MESSAGE: ${errMsg}`);
+        console.error(`[STAFF CREATE] ERROR CODE:\nschool_not_found\n[STAFF CREATE] ERROR MESSAGE:\n${errMsg}`);
         throw new Error(errMsg);
       }
 
@@ -1137,7 +1148,7 @@ export async function createUserProfileByAdmin(
       resolvedSchoolName = sData.name || resolvedSchoolName || targetSchoolId;
     } else if (profile.role === 'manager') {
       const errMsg = 'Cán bộ Quản lý (manager) bắt buộc phải được gán vào 1 trường học cụ thể.';
-      console.error(`[STAFF CREATE] ERROR: missing_school_id\n[STAFF CREATE] ERROR MESSAGE: ${errMsg}`);
+      console.error(`[STAFF CREATE] ERROR CODE:\nmissing_school_id\n[STAFF CREATE] ERROR MESSAGE:\n${errMsg}`);
       throw new Error(errMsg);
     }
 
@@ -1175,6 +1186,7 @@ export async function createUserProfileByAdmin(
     const firestorePath = `users/${targetDocId}`;
     console.log(`[STAFF CREATE] Firebase UID:\n${firebaseUid}`);
     console.log(`[STAFF CREATE] Firestore path:\n${firestorePath}`);
+    console.log(`[STAFF CREATE] Writing...`);
 
     const now = new Date().toISOString();
     const canonicalProfile: UserProfile = {
@@ -1205,8 +1217,6 @@ export async function createUserProfileByAdmin(
     };
 
     // 3. Write document to Firestore
-    console.log(`[STAFF CREATE] Writing document...`);
-
     // Write to users collection
     const targetUserRef = doc(db, "users", targetDocId);
     await setDoc(targetUserRef, canonicalProfile, { merge: true });
@@ -1217,31 +1227,19 @@ export async function createUserProfileByAdmin(
 
     console.log(`[STAFF CREATE] Write completed`);
 
-    // 4. Verify document exists in Firestore (Point 2: Proof of write)
+    // 4. Verify document exists in Firestore (Proof of write)
     const verifySnap = await getDoc(targetUserRef);
     const exists = verifySnap.exists();
     console.log(`[STAFF CREATE] Verify document exists:\n${exists}`);
-
-    if (!exists) {
-      const verifyPending = await getDoc(doc(db, "pendingUsers", cleanEmail));
-      if (!verifyPending.exists()) {
-        throw new Error("Tạo cán bộ thất bại: Firestore không tồn tại document sau khi ghi");
-      }
-    }
-
-    console.log(`[STAFF CREATE] Saved data:\n${JSON.stringify({
-      email: cleanEmail,
-      schoolId: canonicalProfile.schoolId,
-      schoolName: canonicalProfile.schoolName,
-      role: canonicalProfile.role,
-      status: canonicalProfile.status,
-      displayName: canonicalProfile.displayName,
-    })}`);
+    console.log(`[STAFF CREATE] Verified schoolId:\n${canonicalProfile.schoolId || 'none'}`);
+    console.log(`[STAFF CREATE] Verified role:\n${canonicalProfile.role}`);
+    console.log(`[STAFF CREATE] SUCCESS`);
 
     return true;
   } catch (error: any) {
-    console.error(`[STAFF CREATE] ERROR:\n${error?.code || 'unknown'}`);
-    console.error(`[STAFF CREATE] ERROR MESSAGE:\n${error?.message || String(error)}`);
+    console.error(`[STAFF CREATE] ERROR`);
+    console.error(`[STAFF CREATE] Firestore error code:\n${error?.code || 'unknown'}`);
+    console.error(`[STAFF CREATE] Firestore error message:\n${error?.message || String(error)}`);
     throw error;
   }
 }

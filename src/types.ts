@@ -148,7 +148,7 @@ export interface ScheduleStats {
 }
 
 // User Roles & Permissions
-export type UserRole = 'admin' | 'manager';
+export type UserRole = 'admin' | 'manager' | 'owner';
 export type UserStatus = 'invited' | 'active' | 'disabled' | 'pending';
 
 export interface UserInvite {

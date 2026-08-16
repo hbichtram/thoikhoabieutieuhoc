@@ -8,8 +8,8 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Direct, independent identification of System Admin by UID or Email
-    // Does NOT depend on users/{uid} document existing!
+    // Direct, independent identification of System Admin by UID, Token Email, or users collection role
+    // Does NOT depend on users/{uid} document existing if email or UID matches!
     function isSystemAdmin() {
       return isAuthenticated() && (
         request.auth.uid == 'CDDP2wg0tWb1E01arXBouCfd4ZP2' ||
@@ -18,9 +18,11 @@ service cloud.firestore {
           request.auth.token.email.lower() == 'tram.ai.ctst@gmail.com'
         )) ||
         (
-          exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active'
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'system_admin'
+          )
         )
       );
     }
@@ -53,7 +55,7 @@ service cloud.firestore {
         (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
       );
 
-      allow list: if isAuthenticated();
+      allow list: if isSystemAdmin();
     }
 
     match /userInvites/{emailKey} {
@@ -74,7 +76,7 @@ service cloud.firestore {
         (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
       );
 
-      allow list: if isAuthenticated();
+      allow list: if isSystemAdmin();
     }
 
     // 2. Authorized Users Collection (Legacy & Dual-Sync): authorized_users/{emailKey}
@@ -95,13 +97,13 @@ service cloud.firestore {
         (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
       );
 
-      allow list: if isAuthenticated();
+      allow list: if isSystemAdmin();
     }
 
     // 2. User Profiles Collection: users/{userId}
     match /users/{userId} {
       // System Admin has full permissions (create, read, update, delete)
-      allow read, create, update, delete: if isSystemAdmin();
+      allow read, write: if isSystemAdmin();
 
       // Regular user can read their own profile by UID or by pre-registered matching email
       allow get: if isAuthenticated() && (
@@ -109,8 +111,9 @@ service cloud.firestore {
         isSystemAdmin() ||
         (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
       );
-      allow list: if isAuthenticated();
+      allow list: if isSystemAdmin();
       allow create, update: if isAuthenticated() && (isSystemAdmin() || request.auth.uid == userId);
+      allow delete: if isSystemAdmin();
     }
 
     // 3. Schools Collection: schools/{schoolId}
@@ -119,8 +122,9 @@ service cloud.firestore {
       allow create, delete: if isSystemAdmin();
       allow update: if isSystemAdmin() || isManagerOfSchool(schoolId);
 
-      // Authenticated users can read school metadata
-      allow read: if isAuthenticated();
+      // Authenticated users can get school metadata if admin or assigned manager
+      allow get: if isAuthenticated() && (isSystemAdmin() || isManagerOfSchool(schoolId));
+      allow list: if isSystemAdmin();
 
       // Timetable data subcollection: schools/{schoolId}/timetable_data/{docId}
       match /timetable_data/{docId} {
