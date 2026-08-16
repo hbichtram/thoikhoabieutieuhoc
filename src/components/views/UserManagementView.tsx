@@ -64,6 +64,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [newEmail, setNewEmail] = useState<string>('');
   const [newName, setNewName] = useState<string>('');
+  const [newUid, setNewUid] = useState<string>('');
   const [newRole, setNewRole] = useState<UserRole>('manager');
   const [newSchoolId, setNewSchoolId] = useState<string>('');
 
@@ -240,7 +241,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     setModalError(null);
     try {
       const selectedSchool = schools.find((s) => s.id === assignedSchoolId);
-      const generatedUid = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const generatedUid = newUid.trim() ? newUid.trim() : `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const now = new Date().toISOString();
 
       // ALWAYS status: 'active'
@@ -264,6 +265,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         setIsAddModalOpen(false);
         setNewEmail('');
         setNewName('');
+        setNewUid('');
         await loadData();
       } else {
         setModalError('Lỗi khi thêm tài khoản vào Firestore. Vui lòng kiểm tra quyền Admin.');
@@ -527,6 +529,9 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                               <Mail className="w-3 h-3 text-slate-400" />
                               <span>{user.email || 'N/A'}</span>
                             </div>
+                            <div className="text-[10px] text-slate-400 font-mono truncate">
+                              UID: <span className="font-semibold text-slate-600">{user.uid}</span>
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -683,6 +688,9 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
               </h3>
               <p className="text-xs text-slate-500">
                 {editingUser.displayName || editingUser.email}
+              </p>
+              <p className="text-[10px] text-slate-400 font-mono truncate">
+                Document: <span className="font-bold text-slate-700">users/{editingUser.uid}</span>
               </p>
             </div>
 
@@ -851,6 +859,20 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   placeholder="Thầy/Cô Nguyễn Văn A"
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700">Firebase Auth UID (Tùy chọn):</label>
+                <input
+                  type="text"
+                  value={newUid}
+                  onChange={(e) => setNewUid(e.target.value)}
+                  placeholder="Ví dụ: k5k9h9DfSOYvcZVxhCNkC3kHL3w2 (hoặc để trống)"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 font-mono text-[11px] focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                />
+                <p className="text-[10px] text-slate-400">
+                  Nếu cán bộ đã đăng nhập trước đó, nhập UID để ghi thẳng vào users/{"{UID}"}. Nếu để trống, hệ thống sẽ tự động liên kết khi cán bộ đăng nhập.
+                </p>
               </div>
 
               <div className="space-y-1">
