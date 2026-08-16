@@ -677,36 +677,40 @@ export async function getAllAuthorizedUsers(): Promise<AuthorizedUser[]> {
 }
 
 /**
- * Find pre-registered invite or user profile by email using single-doc lookups.
- * Safe for newly authenticated Google users who do not have collection query permissions.
+ * Find pre-registered invite or legacy user profile by email.
+ * Checks pendingUsers, userInvites, authorized_users and users collection.
  */
-export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise<UserInvite | null> {
+export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise<{
+  data: UserInvite;
+  sourceDocId?: string;
+  sourceCollection?: string;
+} | null> {
   const cleanEmail = rawEmail.trim().toLowerCase();
   if (!cleanEmail) return null;
   const key = getEmailKey(cleanEmail);
 
-  // 1. Direct get pendingUsers/{cleanEmail} (Highest priority for pre-registered invites)
+  // 1. Direct get pendingUsers/{cleanEmail} (Highest priority)
   try {
-    const pendingSnap1 = await getDoc(doc(db, "pendingUsers", cleanEmail));
-    if (pendingSnap1.exists()) {
-      return pendingSnap1.data() as UserInvite;
+    const snap = await getDoc(doc(db, "pendingUsers", cleanEmail));
+    if (snap.exists()) {
+      return { data: snap.data() as UserInvite, sourceDocId: cleanEmail, sourceCollection: "pendingUsers" };
     }
   } catch (_) {}
 
   // 2. Direct get userInvites/{cleanEmail}
   try {
-    const inviteSnap1 = await getDoc(doc(db, "userInvites", cleanEmail));
-    if (inviteSnap1.exists()) {
-      return inviteSnap1.data() as UserInvite;
+    const snap = await getDoc(doc(db, "userInvites", cleanEmail));
+    if (snap.exists()) {
+      return { data: snap.data() as UserInvite, sourceDocId: cleanEmail, sourceCollection: "userInvites" };
     }
   } catch (_) {}
 
   // 3. Direct get pendingUsers/{key}
   if (key !== cleanEmail) {
     try {
-      const pendingSnap2 = await getDoc(doc(db, "pendingUsers", key));
-      if (pendingSnap2.exists()) {
-        return pendingSnap2.data() as UserInvite;
+      const snap = await getDoc(doc(db, "pendingUsers", key));
+      if (snap.exists()) {
+        return { data: snap.data() as UserInvite, sourceDocId: key, sourceCollection: "pendingUsers" };
       }
     } catch (_) {}
   }
@@ -714,46 +718,77 @@ export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise
   // 4. Direct get userInvites/{key}
   if (key !== cleanEmail) {
     try {
-      const inviteSnap2 = await getDoc(doc(db, "userInvites", key));
-      if (inviteSnap2.exists()) {
-        return inviteSnap2.data() as UserInvite;
+      const snap = await getDoc(doc(db, "userInvites", key));
+      if (snap.exists()) {
+        return { data: snap.data() as UserInvite, sourceDocId: key, sourceCollection: "userInvites" };
       }
     } catch (_) {}
   }
 
-  // 5. Fallback: Direct get authorized_users/{cleanEmail}
+  // 5. Direct get authorized_users/{cleanEmail}
   try {
-    const authSnap = await getDoc(doc(db, "authorized_users", cleanEmail));
-    if (authSnap.exists()) {
-      const d = authSnap.data() as any;
+    const snap = await getDoc(doc(db, "authorized_users", cleanEmail));
+    if (snap.exists()) {
+      const d = snap.data() as any;
       return {
-        email: cleanEmail,
-        displayName: d.displayName || d.name || cleanEmail.split('@')[0],
-        role: d.role || 'manager',
-        status: d.status || 'invited',
-        schoolId: d.schoolId || null,
-        schoolName: d.schoolName || null,
-        createdAt: d.createdAt || new Date().toISOString(),
-        updatedAt: d.updatedAt || new Date().toISOString(),
+        data: {
+          email: cleanEmail,
+          displayName: d.displayName || d.name || cleanEmail.split('@')[0],
+          role: d.role || 'manager',
+          status: d.status || 'active',
+          schoolId: d.schoolId || null,
+          schoolName: d.schoolName || null,
+          createdAt: d.createdAt || new Date().toISOString(),
+          updatedAt: d.updatedAt || new Date().toISOString(),
+        },
+        sourceDocId: cleanEmail,
+        sourceCollection: "authorized_users"
       };
     }
   } catch (_) {}
 
-  // 6. Query users where email == cleanEmail (Find any pre-created user profile)
+  // 6. Direct get users/{cleanEmail}
   try {
-    const q1 = query(collection(db, "users"), where("email", "==", cleanEmail));
-    const snap1 = await getDocs(q1);
-    if (!snap1.empty) {
-      const d = snap1.docs[0].data() as any;
+    const snap = await getDoc(doc(db, "users", cleanEmail));
+    if (snap.exists()) {
+      const d = snap.data() as any;
       return {
-        email: cleanEmail,
-        displayName: d.displayName || d.name || cleanEmail.split('@')[0],
-        role: d.role || 'manager',
-        status: d.status || 'active',
-        schoolId: d.schoolId || null,
-        schoolName: d.schoolName || null,
-        createdAt: d.createdAt || new Date().toISOString(),
-        updatedAt: d.updatedAt || new Date().toISOString(),
+        data: {
+          email: cleanEmail,
+          displayName: d.displayName || d.name || cleanEmail.split('@')[0],
+          role: d.role || 'manager',
+          status: d.status || 'active',
+          schoolId: d.schoolId || null,
+          schoolName: d.schoolName || null,
+          createdAt: d.createdAt || new Date().toISOString(),
+          updatedAt: d.updatedAt || new Date().toISOString(),
+        },
+        sourceDocId: cleanEmail,
+        sourceCollection: "users"
+      };
+    }
+  } catch (_) {}
+
+  // 7. Query users collection where email == cleanEmail
+  try {
+    const q = query(collection(db, "users"), where("email", "==", cleanEmail));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const docSnap = snap.docs[0];
+      const d = docSnap.data() as any;
+      return {
+        data: {
+          email: cleanEmail,
+          displayName: d.displayName || d.name || cleanEmail.split('@')[0],
+          role: d.role || 'manager',
+          status: d.status || 'active',
+          schoolId: d.schoolId || null,
+          schoolName: d.schoolName || null,
+          createdAt: d.createdAt || new Date().toISOString(),
+          updatedAt: d.updatedAt || new Date().toISOString(),
+        },
+        sourceDocId: docSnap.id,
+        sourceCollection: "users"
       };
     }
   } catch (_) {}
@@ -774,11 +809,13 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
   const isAdmin = isSystemAdminUser(user);
 
   console.log(`[AUTH] Firebase UID: ${googleUid}`);
-  console.log(`[AUTH] Email: ${cleanEmail || 'none'}`);
+  console.log(`[AUTH] Firebase Email: ${cleanEmail || 'none'}`);
+  console.log(`[PROFILE] Looking for:\nusers/${googleUid}`);
 
   try {
     // 1. If System Admin -> full admin access
     if (isAdmin) {
+      console.log(`[PROFILE] UID document exists: true`);
       const adminProfile: UserProfile = {
         uid: googleUid,
         displayName: user.displayName || cleanEmail.split('@')[0] || "Admin Hệ Thống",
@@ -799,7 +836,10 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         console.warn("[AUTH] Admin setDoc warning:", err);
       }
 
-      console.log(`[PROFILE] schoolId: none`);
+      console.log(`[PROFILE] Resolved profile document:\nusers/${googleUid}`);
+      console.log(`[PROFILE] Resolved UID: ${googleUid}`);
+      console.log(`[PROFILE] Role: admin`);
+      console.log(`[PROFILE] School ID: none`);
       return adminProfile;
     }
 
@@ -809,22 +849,33 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       const userDocRef = doc(db, "users", googleUid);
       const userSnap = await getDoc(userDocRef);
       if (userSnap.exists()) {
-        existingProfile = { ...userSnap.data(), uid: googleUid } as UserProfile;
+        const data = userSnap.data() as any;
+        if (data && (data.role || data.email)) {
+          existingProfile = { ...data, uid: googleUid } as UserProfile;
+        }
       }
     } catch (err) {
       console.warn("[PROFILE LOOKUP] users/{uid} direct read check:", err);
     }
 
-    // 3. Search pre-registered invite / admin assignment in pendingUsers by email
-    let pendingData: UserInvite | null = null;
+    // 3. Search pre-registered invite / legacy records by email
+    let preRegistered: { data: UserInvite; sourceDocId?: string; sourceCollection?: string } | null = null;
+    let matchCount = 0;
+
     if (cleanEmail) {
-      pendingData = await findPreRegisteredProfileByEmail(rawEmail);
+      preRegistered = await findPreRegisteredProfileByEmail(rawEmail);
+      if (preRegistered) {
+        matchCount = 1;
+      }
     }
 
     // 4. Case A: Profile document already exists in users/{googleUid}
     if (existingProfile) {
-      // If Admin created/updated a pending assignment while user was offline
-      if (pendingData) {
+      console.log(`[PROFILE] UID document exists: true`);
+
+      // If Admin updated a pending assignment while user was offline
+      if (preRegistered) {
+        const pendingData = preRegistered.data;
         existingProfile.role = pendingData.role || existingProfile.role;
         existingProfile.status = pendingData.status === 'disabled' ? 'disabled' : (pendingData.status || existingProfile.status);
         if (pendingData.schoolId !== undefined) {
@@ -850,14 +901,22 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         } catch (_) {}
       }
 
-      console.log(`[PROFILE] schoolId: ${existingProfile.schoolId || 'none'}`);
+      console.log(`[PROFILE] Resolved profile document:\nusers/${googleUid}`);
+      console.log(`[PROFILE] Resolved UID: ${existingProfile.uid || googleUid}`);
+      console.log(`[PROFILE] Role: ${existingProfile.role}`);
+      console.log(`[PROFILE] School ID: ${existingProfile.schoolId || 'none'}`);
       return existingProfile;
     }
 
-    // 5. Case B: First-time Google login with pre-registered invitation in pendingUsers
-    if (pendingData) {
+    // 5. Case B: users/{googleUid} does NOT exist yet
+    console.log(`[PROFILE] UID document exists: false`);
+    console.log(`[PROFILE] Email fallback query:\nemail == ${cleanEmail}`);
+    console.log(`[PROFILE] Email match count: ${matchCount}`);
+
+    if (preRegistered) {
+      const pendingData = preRegistered.data;
       const isExplicitlyDisabled = pendingData.status === 'disabled';
-      const userProfile: UserProfile = {
+      const canonicalProfile: UserProfile = {
         uid: googleUid,
         displayName: user.displayName || pendingData.displayName || cleanEmail.split('@')[0] || "Cán bộ quản lý",
         email: cleanEmail,
@@ -872,57 +931,30 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       };
 
       try {
-        await setDoc(doc(db, "users", googleUid), userProfile, { merge: true });
-        // Clean up pending invitation as it is now claimed into users/{googleUid}
+        // Write canonical profile to users/{googleUid}
+        await setDoc(doc(db, "users", googleUid), canonicalProfile, { merge: true });
+        // Clean up temporary pending invitation or legacy doc
         await deletePendingUser(cleanEmail);
+        if (preRegistered.sourceCollection === "users" && preRegistered.sourceDocId && preRegistered.sourceDocId !== googleUid) {
+          await deleteDoc(doc(db, "users", preRegistered.sourceDocId)).catch(() => {});
+        }
       } catch (writeErr) {
         console.warn("[USER PROFILE] Write users/{uid} error:", writeErr);
       }
 
-      console.log(`[PROFILE] schoolId: ${userProfile.schoolId || 'none'}`);
-      return userProfile;
+      console.log(`[PROFILE] Resolved profile document:\nusers/${googleUid}`);
+      console.log(`[PROFILE] Resolved UID: ${canonicalProfile.uid}`);
+      console.log(`[PROFILE] Role: ${canonicalProfile.role}`);
+      console.log(`[PROFILE] School ID: ${canonicalProfile.schoolId || 'none'}`);
+      return canonicalProfile;
     }
 
-    // 6. Case C: Legacy user migration (in case document was stored under another key matching email)
-    if (cleanEmail) {
-      try {
-        const q = query(collection(db, "users"), where("email", "==", cleanEmail));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const oldDoc = snap.docs[0];
-          const oldData = oldDoc.data() as any;
-          const isExplicitlyDisabled = oldData.status === 'disabled';
-
-          const migratedProfile: UserProfile = {
-            uid: googleUid,
-            displayName: user.displayName || oldData.displayName || cleanEmail.split('@')[0] || "Cán bộ quản lý",
-            email: cleanEmail,
-            photoURL: user.photoURL || oldData.photoURL || null,
-            role: oldData.role || 'manager',
-            status: isExplicitlyDisabled ? 'disabled' : 'active',
-            schoolId: oldData.schoolId ? oldData.schoolId.trim() : null,
-            schoolName: oldData.schoolName || null,
-            createdAt: oldData.createdAt || now,
-            updatedAt: now,
-            lastLoginAt: now,
-          };
-
-          try {
-            await setDoc(doc(db, "users", googleUid), migratedProfile, { merge: true });
-            if (oldDoc.id !== googleUid) {
-              await deleteDoc(doc(db, "users", oldDoc.id)).catch(() => {});
-            }
-          } catch (_) {}
-
-          console.log(`[PROFILE] schoolId: ${migratedProfile.schoolId || 'none'}`);
-          return migratedProfile;
-        }
-      } catch (_) {}
-    }
-
-    // 7. Case D: Unauthorized (No existing profile in users/{uid} and no pending invitation)
+    // 6. Case C: Unauthorized (No existing profile in users/{uid} and no pending invitation found)
     console.warn(`[USER PROFILE] No authorized invite found for email: ${cleanEmail} (UID: ${googleUid})`);
-    console.log(`[PROFILE] schoolId: none`);
+    console.log(`[PROFILE] Resolved profile document: none`);
+    console.log(`[PROFILE] Resolved UID: none`);
+    console.log(`[PROFILE] Role: none`);
+    console.log(`[PROFILE] School ID: none`);
     return null;
   } catch (error: any) {
     console.error("[USER PROFILE] Error syncing profile:", error);

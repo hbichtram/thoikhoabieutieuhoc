@@ -14,14 +14,16 @@ import {
 
 import { normalizeTeacher } from '../utils/teacherUtils';
 
-const getSchoolKey = (schoolId: string, baseKey: string) => {
-  const cleanId = (schoolId || 'global').trim();
+const getSchoolKey = (schoolId: string, baseKey: string): string => {
+  const cleanId = (schoolId || '').trim();
+  if (!cleanId) return '';
   return `tkbsmart_${cleanId}_${baseKey}`;
 };
 
 export const getStoredTeachers = (schoolId: string = ''): Teacher[] => {
   try {
     const key = getSchoolKey(schoolId, 'teachers');
+    if (!key) return [];
     const data = localStorage.getItem(key);
     if (!data) return [];
     const rawTeachers: Teacher[] = JSON.parse(data);
@@ -33,12 +35,14 @@ export const getStoredTeachers = (schoolId: string = ''): Teacher[] => {
 
 export const setStoredTeachers = (teachers: Teacher[], schoolId: string = '') => {
   const key = getSchoolKey(schoolId, 'teachers');
+  if (!key) return;
   localStorage.setItem(key, JSON.stringify(teachers));
 };
 
 export const getStoredClasses = (schoolId: string = ''): ClassItem[] => {
   try {
     const key = getSchoolKey(schoolId, 'classes');
+    if (!key) return [];
     const data = localStorage.getItem(key);
     if (!data) return [];
     const list: ClassItem[] = JSON.parse(data);
@@ -56,6 +60,8 @@ export const getStoredClasses = (schoolId: string = ''): ClassItem[] => {
 };
 
 export const setStoredClasses = (classes: ClassItem[], schoolId: string = '') => {
+  const key = getSchoolKey(schoolId, 'classes');
+  if (!key) return;
   const normalized = (classes || []).map((c) => {
     let g = c.grade;
     if (!g || g > 5 || g < 1) {
@@ -64,13 +70,13 @@ export const setStoredClasses = (classes: ClassItem[], schoolId: string = '') =>
     }
     return { ...c, grade: g };
   });
-  const key = getSchoolKey(schoolId, 'classes');
   localStorage.setItem(key, JSON.stringify(normalized));
 };
 
 export const getStoredSubjects = (schoolId: string = ''): Subject[] => {
   try {
     const key = getSchoolKey(schoolId, 'subjects');
+    if (!key) return initialSubjects;
     const data = localStorage.getItem(key);
     return data ? JSON.parse(data) : initialSubjects;
   } catch {
@@ -80,12 +86,14 @@ export const getStoredSubjects = (schoolId: string = ''): Subject[] => {
 
 export const setStoredSubjects = (subjects: Subject[], schoolId: string = '') => {
   const key = getSchoolKey(schoolId, 'subjects');
+  if (!key) return;
   localStorage.setItem(key, JSON.stringify(subjects));
 };
 
 export const getStoredAssignments = (schoolId: string = ''): Assignment[] => {
   try {
     const key = getSchoolKey(schoolId, 'assignments');
+    if (!key) return [];
     const data = localStorage.getItem(key);
     if (!data) return [];
     const parsed: Assignment[] = JSON.parse(data);
@@ -105,12 +113,14 @@ export const getStoredAssignments = (schoolId: string = ''): Assignment[] => {
 
 export const setStoredAssignments = (assignments: Assignment[], schoolId: string = '') => {
   const key = getSchoolKey(schoolId, 'assignments');
+  if (!key) return;
   localStorage.setItem(key, JSON.stringify(assignments));
 };
 
 export const getStoredTimeConfig = (schoolId: string = ''): TimeConfig => {
   try {
     const key = getSchoolKey(schoolId, 'timeconfig');
+    if (!key) return initialTimeConfig;
     const data = localStorage.getItem(key);
     return data ? JSON.parse(data) : initialTimeConfig;
   } catch {
@@ -120,12 +130,14 @@ export const getStoredTimeConfig = (schoolId: string = ''): TimeConfig => {
 
 export const setStoredTimeConfig = (config: TimeConfig, schoolId: string = '') => {
   const key = getSchoolKey(schoolId, 'timeconfig');
+  if (!key) return;
   localStorage.setItem(key, JSON.stringify(config));
 };
 
 export const getStoredScheduleCells = (schoolId: string = ''): ScheduleCell[] => {
   try {
     const key = getSchoolKey(schoolId, 'cells');
+    if (!key) return [];
     const data = localStorage.getItem(key);
     return data ? JSON.parse(data) : [];
   } catch {
@@ -135,12 +147,14 @@ export const getStoredScheduleCells = (schoolId: string = ''): ScheduleCell[] =>
 
 export const setStoredScheduleCells = (cells: ScheduleCell[], schoolId: string = '') => {
   const key = getSchoolKey(schoolId, 'cells');
+  if (!key) return;
   localStorage.setItem(key, JSON.stringify(cells));
 };
 
 export const getStoredVersions = (schoolId: string = ''): ScheduleVersion[] => {
   try {
     const key = getSchoolKey(schoolId, 'versions');
+    if (!key) return [];
     const data = localStorage.getItem(key);
     return data ? JSON.parse(data) : [];
   } catch {
@@ -150,20 +164,24 @@ export const getStoredVersions = (schoolId: string = ''): ScheduleVersion[] => {
 
 export const setStoredVersions = (versions: ScheduleVersion[], schoolId: string = '') => {
   const key = getSchoolKey(schoolId, 'versions');
+  if (!key) return;
   localStorage.setItem(key, JSON.stringify(versions));
 };
 
 export const getStoredLastSavedAt = (schoolId: string = ''): string | null => {
   const key = getSchoolKey(schoolId, 'last_saved_at');
+  if (!key) return null;
   return localStorage.getItem(key);
 };
 
 export const setStoredLastSavedAt = (timeStr: string, schoolId: string = '') => {
   const key = getSchoolKey(schoolId, 'last_saved_at');
+  if (!key) return;
   localStorage.setItem(key, timeStr);
 };
 
 export const resetToSampleData = (schoolId: string = '') => {
+  if (!schoolId) return;
   setStoredTeachers([], schoolId);
   setStoredClasses([], schoolId);
   setStoredSubjects(initialSubjects, schoolId);

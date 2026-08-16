@@ -149,39 +149,39 @@ export default function App() {
 
       const selectedSchool = schoolList.find((s) => s.id === targetSchoolId);
       if (selectedSchool) {
-        console.log(`[SCHOOL] Requested school document: schools/${selectedSchool.id}`);
-        console.log(`[SCHOOL] Document exists: true`);
-        console.log(`[SCHOOL] School name: ${selectedSchool.name}`);
+        console.log(`[SCHOOL] Requested:\nschools/${selectedSchool.id}`);
+        console.log(`[SCHOOL] Exists: true`);
+        console.log(`[SCHOOL] Name: ${selectedSchool.name}`);
       } else {
-        console.log(`[SCHOOL] Requested school document: none`);
-        console.log(`[SCHOOL] Document exists: false`);
-        console.log(`[SCHOOL] School name: none`);
+        console.log(`[SCHOOL] Requested:\nnone`);
+        console.log(`[SCHOOL] Exists: false`);
+        console.log(`[SCHOOL] Name: none`);
       }
     } else if (profile.role === 'manager' && profile.status === 'active') {
       if (!profile.schoolId || !profile.schoolId.trim()) {
         setSchools([]);
         setActiveSchoolId('');
         setSchoolLoadError('unassigned');
-        console.log(`[SCHOOL] Requested school document: none`);
-        console.log(`[SCHOOL] Document exists: false`);
-        console.log(`[SCHOOL] School name: none`);
+        console.log(`[SCHOOL] Requested:\nnone`);
+        console.log(`[SCHOOL] Exists: false`);
+        console.log(`[SCHOOL] Name: none`);
       } else {
         const cleanSchoolId = profile.schoolId.trim();
-        console.log(`[SCHOOL] Requested school document: schools/${cleanSchoolId}`);
+        console.log(`[SCHOOL] Requested:\nschools/${cleanSchoolId}`);
         try {
           const schoolDoc = await getSchool(cleanSchoolId);
           if (schoolDoc) {
             setSchools([schoolDoc]);
             setActiveSchoolId(schoolDoc.id);
             setSchoolLoadError(null);
-            console.log(`[SCHOOL] Document exists: true`);
-            console.log(`[SCHOOL] School name: ${schoolDoc.name}`);
+            console.log(`[SCHOOL] Exists: true`);
+            console.log(`[SCHOOL] Name: ${schoolDoc.name}`);
           } else {
             setSchools([]);
             setActiveSchoolId('');
             setSchoolLoadError('not_found');
-            console.log(`[SCHOOL] Document exists: false`);
-            console.log(`[SCHOOL] School name: none`);
+            console.log(`[SCHOOL] Exists: false`);
+            console.log(`[SCHOOL] Name: none`);
           }
         } catch (err: any) {
           console.error(`[SCHOOL LOAD ERROR]`, err);
@@ -189,21 +189,21 @@ export default function App() {
           setActiveSchoolId('');
           if (err?.code === 'permission-denied') {
             setSchoolLoadError('permission_denied');
-            console.log(`[SCHOOL] Document exists: permission-denied`);
+            console.log(`[SCHOOL] Exists: permission-denied`);
           } else {
             setSchoolLoadError('not_found');
-            console.log(`[SCHOOL] Document exists: false`);
+            console.log(`[SCHOOL] Exists: false`);
           }
-          console.log(`[SCHOOL] School name: none`);
+          console.log(`[SCHOOL] Name: none`);
         }
       }
     } else {
       setSchools([]);
       setActiveSchoolId('');
       setSchoolLoadError(null);
-      console.log(`[SCHOOL] Requested school document: none`);
-      console.log(`[SCHOOL] Document exists: false`);
-      console.log(`[SCHOOL] School name: none`);
+      console.log(`[SCHOOL] Requested:\nnone`);
+      console.log(`[SCHOOL] Exists: false`);
+      console.log(`[SCHOOL] Name: none`);
     }
   }, []);
 
@@ -276,7 +276,7 @@ export default function App() {
     setIsSyncing(true);
     setSyncError(null);
 
-    console.log(`[DATA] Timetable path: schools/${targetSchoolId}/timetable_data/main`);
+    console.log(`[DATA] Timetable path:\nschools/${targetSchoolId}/timetable_data/main`);
     if (userProfile.role === 'manager') {
       console.log(`[MANAGER TIMETABLE LOAD]\npath: schools/${targetSchoolId}/timetable_data/main`);
     }
