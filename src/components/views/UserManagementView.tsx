@@ -163,13 +163,9 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
     setIsProcessing(true);
     try {
-      // If activating a user without school, assign first school
-      let assignedSchoolId = user.schoolId;
-      let assignedSchoolName = user.schoolName;
-      if (targetStatus === 'active' && !assignedSchoolId && schools.length > 0) {
-        assignedSchoolId = schools[0].id;
-        assignedSchoolName = schools[0].name;
-      }
+      // Retain existing assigned school or null
+      const assignedSchoolId = user.schoolId || null;
+      const assignedSchoolName = user.schoolName || null;
 
       const success = await updateUserProfileByAdmin(user.uid, {
         email: user.email,

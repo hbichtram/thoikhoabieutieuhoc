@@ -55,6 +55,11 @@ import {
 } from './services/storage';
 
 import {
+  initialSubjects,
+  initialTimeConfig,
+} from './data/initialData';
+
+import {
   auth,
   subscribeAuthState,
   loginWithGoogle,
@@ -97,13 +102,13 @@ export default function App() {
   const loadedSchoolIdRef = useRef<string | null>(null);
 
   // Core States for Timetable Data
-  const [teachers, setTeachers] = useState<Teacher[]>(getStoredTeachers);
-  const [classes, setClasses] = useState<ClassItem[]>(getStoredClasses);
-  const [subjects, setSubjects] = useState<Subject[]>(getStoredSubjects);
-  const [assignments, setAssignments] = useState<Assignment[]>(getStoredAssignments);
-  const [timeConfig, setTimeConfig] = useState<TimeConfig>(getStoredTimeConfig);
-  const [cells, setCells] = useState<ScheduleCell[]>(getStoredScheduleCells);
-  const [versions, setVersions] = useState<ScheduleVersion[]>(getStoredVersions);
+  const [teachers, setTeachers] = useState<Teacher[]>(() => getStoredTeachers(activeSchoolId));
+  const [classes, setClasses] = useState<ClassItem[]>(() => getStoredClasses(activeSchoolId));
+  const [subjects, setSubjects] = useState<Subject[]>(() => getStoredSubjects(activeSchoolId));
+  const [assignments, setAssignments] = useState<Assignment[]>(() => getStoredAssignments(activeSchoolId));
+  const [timeConfig, setTimeConfig] = useState<TimeConfig>(() => getStoredTimeConfig(activeSchoolId));
+  const [cells, setCells] = useState<ScheduleCell[]>(() => getStoredScheduleCells(activeSchoolId));
+  const [versions, setVersions] = useState<ScheduleVersion[]>(() => getStoredVersions(activeSchoolId));
 
   const setFirestoreSyncSuccess = useCallback((source: string, reqId: number) => {
     if (reqId === activeRequestIdRef.current) {
@@ -258,50 +263,62 @@ export default function App() {
       .then(async (remoteData) => {
         if (currentReqId !== activeRequestIdRef.current) return;
         if (remoteData) {
-          if (remoteData.teachers) {
-            const normalized = remoteData.teachers.map((t: Teacher) => normalizeTeacher(t));
-            setTeachers(normalized);
-            setStoredTeachers(normalized);
-          }
-          if (remoteData.classes) {
-            const normalizedClasses = remoteData.classes.map((c: ClassItem) => {
-              let g = c.grade;
-              if (!g || g > 5 || g < 1) {
-                const match = c.name?.match(/^([1-5])/);
-                g = match ? parseInt(match[1], 10) : (g ? Math.min(5, Math.max(1, g)) : 1);
-              }
-              return { ...c, grade: g };
-            });
-            setClasses(normalizedClasses);
-            setStoredClasses(normalizedClasses);
-          }
-          if (remoteData.subjects) {
-            setSubjects(remoteData.subjects);
-            setStoredSubjects(remoteData.subjects);
-          }
-          if (remoteData.assignments) {
-            setAssignments(remoteData.assignments);
-            setStoredAssignments(remoteData.assignments);
-          }
-          if (remoteData.timeConfig) {
-            setTimeConfig(remoteData.timeConfig);
-            setStoredTimeConfig(remoteData.timeConfig);
-          }
-          if (remoteData.cells) {
-            const normalizedCells = normalizeScheduleCells(
-              remoteData.cells,
-              remoteData.assignments || assignments
-            );
-            setCells(normalizedCells);
-            setStoredScheduleCells(normalizedCells);
-          }
-          if (remoteData.versions) {
-            setVersions(remoteData.versions);
-            setStoredVersions(remoteData.versions);
-          }
+          const loadedTeachers = remoteData.teachers ? remoteData.teachers.map((t: Teacher) => normalizeTeacher(t)) : [];
+          setTeachers(loadedTeachers);
+          setStoredTeachers(loadedTeachers, targetSchoolId);
+
+          const loadedClasses = remoteData.classes ? remoteData.classes.map((c: ClassItem) => {
+            let g = c.grade;
+            if (!g || g > 5 || g < 1) {
+              const match = c.name?.match(/^([1-5])/);
+              g = match ? parseInt(match[1], 10) : (g ? Math.min(5, Math.max(1, g)) : 1);
+            }
+            return { ...c, grade: g };
+          }) : [];
+          setClasses(loadedClasses);
+          setStoredClasses(loadedClasses, targetSchoolId);
+
+          const loadedSubjects = remoteData.subjects || initialSubjects;
+          setSubjects(loadedSubjects);
+          setStoredSubjects(loadedSubjects, targetSchoolId);
+
+          const loadedAssignments = remoteData.assignments || [];
+          setAssignments(loadedAssignments);
+          setStoredAssignments(loadedAssignments, targetSchoolId);
+
+          const loadedTimeConfig = remoteData.timeConfig || initialTimeConfig;
+          setTimeConfig(loadedTimeConfig);
+          setStoredTimeConfig(loadedTimeConfig, targetSchoolId);
+
+          const loadedCells = remoteData.cells
+            ? normalizeScheduleCells(remoteData.cells, loadedAssignments)
+            : [];
+          setCells(loadedCells);
+          setStoredScheduleCells(loadedCells, targetSchoolId);
+
+          const loadedVersions = remoteData.versions || [];
+          setVersions(loadedVersions);
+          setStoredVersions(loadedVersions, targetSchoolId);
+
           console.log(`[FIRESTORE READ SUCCESS] Loaded school: ${targetSchoolId}`);
         } else {
+          // School has no saved timetable data yet: initialize clean state for this school
           console.log(`[FIRESTORE READ SUCCESS] No existing timetable document for school: ${targetSchoolId}`);
+          const storedT = getStoredTeachers(targetSchoolId);
+          const storedC = getStoredClasses(targetSchoolId);
+          const storedS = getStoredSubjects(targetSchoolId);
+          const storedA = getStoredAssignments(targetSchoolId);
+          const storedTC = getStoredTimeConfig(targetSchoolId);
+          const storedCells = getStoredScheduleCells(targetSchoolId);
+          const storedV = getStoredVersions(targetSchoolId);
+
+          setTeachers(storedT);
+          setClasses(storedC);
+          setSubjects(storedS);
+          setAssignments(storedA);
+          setTimeConfig(storedTC);
+          setCells(storedCells);
+          setVersions(storedV);
         }
 
         // Also fetch school versions
@@ -309,7 +326,7 @@ export default function App() {
           const remoteVersions = await getSchoolVersions(targetSchoolId);
           if (remoteVersions && remoteVersions.length > 0) {
             setVersions(remoteVersions);
-            setStoredVersions(remoteVersions);
+            setStoredVersions(remoteVersions, targetSchoolId);
           }
         } catch (vErr) {
           console.warn('Could not fetch versions collection:', vErr);
@@ -332,14 +349,34 @@ export default function App() {
       });
   }, [authReady, user, userProfile, activeSchoolId, setFirestoreSyncSuccess, setFirestoreSyncError]);
 
-  // Sync state to LocalStorage as secondary fallback cache
-  useEffect(() => { setStoredTeachers(teachers); }, [teachers]);
-  useEffect(() => { setStoredClasses(classes); }, [classes]);
-  useEffect(() => { setStoredSubjects(subjects); }, [subjects]);
-  useEffect(() => { setStoredAssignments(assignments); }, [assignments]);
-  useEffect(() => { setStoredTimeConfig(timeConfig); }, [timeConfig]);
-  useEffect(() => { setStoredScheduleCells(cells); }, [cells]);
-  useEffect(() => { setStoredVersions(versions); }, [versions]);
+  // Sync state to LocalStorage as secondary fallback cache (scoped by activeSchoolId)
+  useEffect(() => {
+    if (activeSchoolId) setStoredTeachers(teachers, activeSchoolId);
+  }, [teachers, activeSchoolId]);
+
+  useEffect(() => {
+    if (activeSchoolId) setStoredClasses(classes, activeSchoolId);
+  }, [classes, activeSchoolId]);
+
+  useEffect(() => {
+    if (activeSchoolId) setStoredSubjects(subjects, activeSchoolId);
+  }, [subjects, activeSchoolId]);
+
+  useEffect(() => {
+    if (activeSchoolId) setStoredAssignments(assignments, activeSchoolId);
+  }, [assignments, activeSchoolId]);
+
+  useEffect(() => {
+    if (activeSchoolId) setStoredTimeConfig(timeConfig, activeSchoolId);
+  }, [timeConfig, activeSchoolId]);
+
+  useEffect(() => {
+    if (activeSchoolId) setStoredScheduleCells(cells, activeSchoolId);
+  }, [cells, activeSchoolId]);
+
+  useEffect(() => {
+    if (activeSchoolId) setStoredVersions(versions, activeSchoolId);
+  }, [versions, activeSchoolId]);
 
   // Helper to persist changes into Firestore for the current active school
   const syncToFirestore = useCallback(
@@ -711,12 +748,27 @@ export default function App() {
     setSyncError(null);
     setLoginError(null);
     loadedSchoolIdRef.current = null;
+    setTeachers([]);
+    setClasses([]);
+    setSubjects(initialSubjects);
+    setAssignments([]);
+    setTimeConfig(initialTimeConfig);
+    setCells([]);
+    setVersions([]);
   };
 
   // Handle Switch School (Admin Only)
   const handleSwitchSchool = (newSchoolId: string) => {
     if (newSchoolId === activeSchoolId) return;
     loadedSchoolIdRef.current = null;
+    // Pre-populate with target school's cached data immediately to prevent displaying previous school's data
+    setTeachers(getStoredTeachers(newSchoolId));
+    setClasses(getStoredClasses(newSchoolId));
+    setSubjects(getStoredSubjects(newSchoolId));
+    setAssignments(getStoredAssignments(newSchoolId));
+    setTimeConfig(getStoredTimeConfig(newSchoolId));
+    setCells(getStoredScheduleCells(newSchoolId));
+    setVersions(getStoredVersions(newSchoolId));
     setActiveSchoolId(newSchoolId);
     const selectedSchool = schools.find((s) => s.id === newSchoolId);
     if (selectedSchool) {
