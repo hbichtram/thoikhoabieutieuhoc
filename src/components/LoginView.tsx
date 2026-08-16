@@ -26,234 +26,245 @@ export const LoginView: React.FC<LoginViewProps> = ({
   authReady,
 }) => {
   return (
-    <div className="min-h-screen w-full bg-[#f8fafc] flex flex-col lg:flex-row font-sans text-slate-900 antialiased selection:bg-blue-600 selection:text-white">
+    <div className="min-h-screen w-full bg-[#F8FAFC] flex flex-col lg:flex-row font-sans text-[#0F172A] antialiased">
       {/* =========================================================================
-          LEFT PANEL: BRAND IDENTITY, AI TIMETABLE PREVIEW & CORE VALUES (54%)
+          LEFT PANEL: BRAND IDENTITY, SMART ASSISTANT PREVIEW & FEATURES (57%)
           ========================================================================= */}
-      <div className="lg:w-[54%] bg-[#0b1329] text-white p-6 sm:p-10 lg:p-14 flex flex-col justify-between relative overflow-hidden">
+      <div className="w-full lg:w-[57%] bg-[#0B1736] text-white p-6 sm:p-8 lg:p-10 xl:p-12 flex flex-col justify-between relative overflow-hidden">
         {/* Subtle Ambient Background Gradients */}
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 right-0 w-80 h-80 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] opacity-40 pointer-events-none" />
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#2563EB]/12 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-80 h-80 bg-[#06B6D4]/10 rounded-full blur-3xl pointer-events-none" />
 
         {/* TOP: Brand Header */}
-        <div className="relative z-10 space-y-2">
+        <div className="relative z-10 space-y-1">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center text-white shadow-lg shadow-blue-900/40 shrink-0 border border-blue-400/20">
-              <Calendar className="w-6 h-6 text-white" />
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-[#2563EB] flex items-center justify-center text-white shadow-md shadow-blue-900/30 shrink-0 border border-blue-400/20">
+              <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </div>
             <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="font-extrabold text-xl sm:text-2xl lg:text-3xl tracking-tight text-white uppercase">
+              <div className="flex items-center gap-2">
+                <h1 className="font-extrabold text-lg sm:text-xl lg:text-2xl tracking-tight text-white uppercase">
                   THỜI KHÓA BIỂU TIỂU HỌC
                 </h1>
-                <span className="text-[11px] font-semibold bg-blue-500/15 text-blue-300 px-2 py-0.5 rounded-md border border-blue-400/20 tracking-wider">
+                <span className="text-[10px] font-semibold bg-white/10 text-slate-200 px-1.5 py-0.5 rounded border border-white/10 tracking-wider">
                   v1.0
                 </span>
               </div>
-              <p className="text-xs sm:text-sm text-slate-300 font-normal mt-0.5">
+              <p className="text-xs sm:text-sm text-slate-300 font-normal">
                 Trợ lý thiết kế và xếp thời khóa biểu
               </p>
             </div>
           </div>
         </div>
 
-        {/* MIDDLE: AI Timetable Preview Card & 3 Core Values */}
-        <div className="relative z-10 my-8 lg:my-10 space-y-5">
-          {/* Card: AI Mini Dashboard */}
-          <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4.5">
-            {/* Header of AI Card */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800/90 pb-3.5">
+        {/* MIDDLE: Smart Assistant Timetable Box & Features */}
+        <div className="relative z-10 my-6 sm:my-8 space-y-4 max-w-2xl">
+          {/* Card: TRỢ LÍ TKB THÔNG MINH */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3.5">
+            {/* Header of Assistant Card */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-500/15 text-blue-400 border border-blue-500/20">
-                  <Sparkles className="w-4 h-4 text-blue-400" />
-                </span>
+                <div className="w-6 h-6 rounded-md bg-[#2563EB]/20 border border-[#2563EB]/40 flex items-center justify-center text-[#06B6D4]">
+                  <Sparkles className="w-3.5 h-3.5" />
+                </div>
                 <span className="text-xs sm:text-sm font-bold text-white tracking-wide uppercase">
-                  AI ĐANG TỐI ƯU THỜI KHÓA BIỂU
+                  TRỢ LÍ TKB THÔNG MINH
                 </span>
               </div>
 
-              {/* Status Indicator */}
-              <div className="flex items-center gap-2 bg-blue-950/70 border border-blue-800/50 px-3 py-1 rounded-full self-start sm:self-auto">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
-                </span>
-                <span className="text-[11px] font-medium text-cyan-300">
-                  AI đang tối ưu…
-                </span>
-              </div>
+              {/* Status Badge */}
+              <span className="text-[11px] font-medium bg-[#06B6D4]/15 text-[#06B6D4] px-2.5 py-0.5 rounded-full border border-[#06B6D4]/30">
+                Trợ lí thông minh
+              </span>
             </div>
 
-            {/* Mini Timetable Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {/* 5-Day Full Timetable Grid: Thứ 2 -> Thứ 6 */}
+            <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
               {/* Thứ 2 */}
-              <div className="bg-[#0f172a] p-3 rounded-xl border border-slate-800/80 space-y-2">
-                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center">
+              <div className="bg-[#0B1736] p-2 sm:p-2.5 rounded-lg border border-slate-800 text-center space-y-1.5">
+                <div className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                   THỨ 2
                 </div>
-                <div className="space-y-1.5">
-                  <div className="py-1.5 px-2 rounded-lg text-xs font-semibold bg-blue-600/20 text-blue-200 border border-blue-500/25 text-center">
+                <div className="space-y-1">
+                  <div className="py-1 px-1 rounded text-[10px] sm:text-[11px] font-medium bg-[#2563EB]/20 text-blue-200 border border-[#2563EB]/30 truncate">
                     Toán
                   </div>
-                  <div className="py-1.5 px-2 rounded-lg text-xs font-semibold bg-slate-800 text-slate-200 border border-slate-700/60 text-center">
+                  <div className="py-1 px-1 rounded text-[10px] sm:text-[11px] font-medium bg-emerald-500/20 text-emerald-200 border border-emerald-500/30 truncate">
                     Tiếng Việt
                   </div>
                 </div>
               </div>
 
               {/* Thứ 3 */}
-              <div className="bg-[#0f172a] p-3 rounded-xl border border-slate-800/80 space-y-2">
-                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center">
+              <div className="bg-[#0B1736] p-2 sm:p-2.5 rounded-lg border border-slate-800 text-center space-y-1.5">
+                <div className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                   THỨ 3
                 </div>
-                <div className="space-y-1.5">
-                  <div className="py-1.5 px-2 rounded-lg text-xs font-semibold bg-emerald-600/20 text-emerald-200 border border-emerald-500/25 text-center">
+                <div className="space-y-1">
+                  <div className="py-1 px-1 rounded text-[10px] sm:text-[11px] font-medium bg-emerald-500/20 text-emerald-200 border border-emerald-500/30 truncate">
                     Tiếng Việt
                   </div>
-                  <div className="py-1.5 px-2 rounded-lg text-xs font-semibold bg-slate-800 text-slate-200 border border-slate-700/60 text-center">
+                  <div className="py-1 px-1 rounded text-[10px] sm:text-[11px] font-medium bg-[#2563EB]/20 text-blue-200 border border-[#2563EB]/30 truncate">
                     Toán
                   </div>
                 </div>
               </div>
 
               {/* Thứ 4 */}
-              <div className="bg-[#0f172a] p-3 rounded-xl border border-slate-800/80 space-y-2">
-                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center">
+              <div className="bg-[#0B1736] p-2 sm:p-2.5 rounded-lg border border-slate-800 text-center space-y-1.5">
+                <div className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                   THỨ 4
                 </div>
-                <div className="space-y-1.5">
-                  <div className="py-1.5 px-2 rounded-lg text-xs font-semibold bg-indigo-600/20 text-indigo-200 border border-indigo-500/25 text-center">
+                <div className="space-y-1">
+                  <div className="py-1 px-1 rounded text-[10px] sm:text-[11px] font-medium bg-indigo-500/20 text-indigo-200 border border-indigo-500/30 truncate">
                     Tiếng Anh
                   </div>
-                  <div className="py-1.5 px-2 rounded-lg text-xs font-semibold bg-slate-800 text-slate-200 border border-slate-700/60 text-center">
+                  <div className="py-1 px-1 rounded text-[10px] sm:text-[11px] font-medium bg-purple-500/20 text-purple-200 border border-purple-500/30 truncate">
                     Mỹ thuật
                   </div>
                 </div>
               </div>
 
               {/* Thứ 5 */}
-              <div className="bg-[#0f172a] p-3 rounded-xl border border-slate-800/80 space-y-2">
-                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center">
+              <div className="bg-[#0B1736] p-2 sm:p-2.5 rounded-lg border border-slate-800 text-center space-y-1.5">
+                <div className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                   THỨ 5
                 </div>
-                <div className="space-y-1.5">
-                  <div className="py-1.5 px-2 rounded-lg text-xs font-semibold bg-amber-600/20 text-amber-200 border border-amber-500/25 text-center">
+                <div className="space-y-1">
+                  <div className="py-1 px-1 rounded text-[10px] sm:text-[11px] font-medium bg-amber-500/20 text-amber-200 border border-amber-500/30 truncate">
                     Khoa học
                   </div>
-                  <div className="py-1.5 px-2 rounded-lg text-xs font-semibold bg-slate-800 text-slate-200 border border-slate-700/60 text-center">
+                  <div className="py-1 px-1 rounded text-[10px] sm:text-[11px] font-medium bg-rose-500/20 text-rose-200 border border-rose-500/30 truncate">
                     Âm nhạc
+                  </div>
+                </div>
+              </div>
+
+              {/* Thứ 6 */}
+              <div className="bg-[#0B1736] p-2 sm:p-2.5 rounded-lg border border-slate-800 text-center space-y-1.5">
+                <div className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  THỨ 6
+                </div>
+                <div className="space-y-1">
+                  <div className="py-1 px-1 rounded text-[10px] sm:text-[11px] font-medium bg-cyan-500/20 text-cyan-200 border border-cyan-500/30 truncate">
+                    Tin học
+                  </div>
+                  <div className="py-1 px-1 rounded text-[10px] sm:text-[11px] font-medium bg-teal-500/20 text-teal-200 border border-teal-500/30 truncate">
+                    Đạo đức
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* AI Optimization Checklist */}
-            <div className="pt-2 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            {/* 4 Validation Checklist Criteria */}
+            <div className="pt-2.5 border-t border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
               <div className="flex items-center gap-1.5 text-slate-300">
-                <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <Check className="w-3.5 h-3.5 text-[#06B6D4] shrink-0" />
                 <span className="text-[11px]">Không trùng giáo viên</span>
               </div>
               <div className="flex items-center gap-1.5 text-slate-300">
-                <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <Check className="w-3.5 h-3.5 text-[#06B6D4] shrink-0" />
                 <span className="text-[11px]">Không trùng lớp</span>
               </div>
               <div className="flex items-center gap-1.5 text-slate-300">
-                <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <Check className="w-3.5 h-3.5 text-[#06B6D4] shrink-0" />
                 <span className="text-[11px]">Đảm bảo số tiết</span>
               </div>
               <div className="flex items-center gap-1.5 text-slate-300">
-                <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <Check className="w-3.5 h-3.5 text-[#06B6D4] shrink-0" />
                 <span className="text-[11px]">Tự phát hiện xung đột</span>
               </div>
             </div>
           </div>
 
-          {/* 3 Core Value Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="flex items-center gap-2.5 bg-slate-900/60 border border-slate-800/90 p-3.5 rounded-xl text-slate-200">
-              <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
-                <Zap className="w-4 h-4 text-blue-400" />
+          {/* 3 Core Features as Modern Small Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="flex items-center gap-2.5 bg-slate-900/70 border border-slate-800 p-2.5 sm:p-3 rounded-xl text-slate-200">
+              <div className="w-7 h-7 rounded-lg bg-blue-500/15 border border-blue-500/25 flex items-center justify-center shrink-0">
+                <Zap className="w-3.5 h-3.5 text-blue-400" />
               </div>
               <span className="text-xs font-medium leading-snug">
                 Xếp TKB tự động thông minh
               </span>
             </div>
 
-            <div className="flex items-center gap-2.5 bg-slate-900/60 border border-slate-800/90 p-3.5 rounded-xl text-slate-200">
-              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0">
-                <ShieldCheck className="w-4 h-4 text-cyan-400" />
+            <div className="flex items-center gap-2.5 bg-slate-900/70 border border-slate-800 p-2.5 sm:p-3 rounded-xl text-slate-200">
+              <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/25 flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#06B6D4]" />
               </div>
               <span className="text-xs font-medium leading-snug">
                 Tự động kiểm tra xung đột
               </span>
             </div>
 
-            <div className="flex items-center gap-2.5 bg-slate-900/60 border border-slate-800/90 p-3.5 rounded-xl text-slate-200">
-              <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center shrink-0">
-                <FileSpreadsheet className="w-4 h-4 text-indigo-400" />
+            <div className="flex items-center gap-2.5 bg-slate-900/70 border border-slate-800 p-2.5 sm:p-3 rounded-xl text-slate-200">
+              <div className="w-7 h-7 rounded-lg bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center shrink-0">
+                <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-400" />
               </div>
               <span className="text-xs font-medium leading-snug">
-                Xuất Word & Excel chuẩn mẫu
+                Xuất Word &amp; Excel chuẩn mẫu
               </span>
             </div>
           </div>
         </div>
 
-        {/* BOTTOM: Clean Copyright Footer */}
-        <div className="relative z-10 text-xs text-slate-400 font-normal pt-4 border-t border-slate-800/60 flex items-center justify-between">
-          <span>© 2026 Thời Khóa Biểu Tiểu Học · Tác giả: Hồng Bích Trâm</span>
+        {/* BOTTOM: Minimal Footer */}
+        <div className="relative z-10 text-[11px] text-slate-400 font-normal pt-3 border-t border-slate-800/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+          <span>© 2026 Thời Khóa Biểu Tiểu Học</span>
+          <span>Tác giả: Hồng Bích Trâm</span>
         </div>
       </div>
 
       {/* =========================================================================
-          RIGHT PANEL: LOGIN ACTION CARD (46%)
+          RIGHT PANEL: CLEAN & CENTERED LOGIN CARD (43%)
           ========================================================================= */}
-      <div className="lg:w-[46%] bg-[#f8fafc] flex items-center justify-center p-6 sm:p-10 lg:p-14">
-        <div className="max-w-md w-full bg-white rounded-[24px] border border-slate-200/80 shadow-xl shadow-slate-200/50 p-8 sm:p-10 space-y-7">
-          {/* Card Header */}
-          <div className="text-center space-y-2.5">
-            <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center mx-auto text-blue-600 mb-4 shadow-sm">
-              <Calendar className="w-7 h-7 text-blue-600" />
+      <div className="w-full lg:w-[43%] bg-[#F8FAFC] flex items-center justify-center p-6 sm:p-8 lg:p-10 min-h-[460px] lg:min-h-screen">
+        <div className="max-w-[420px] w-full bg-white rounded-[22px] border border-[#E2E8F0] shadow-sm p-6 sm:p-8 space-y-6">
+          {/* Card Icon & Header */}
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center mx-auto text-[#2563EB] shadow-sm">
+              <Calendar className="w-6 h-6" />
             </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Đăng nhập
-            </h2>
-            <p className="text-sm text-slate-500 font-normal max-w-xs mx-auto leading-relaxed">
-              Quản lý thời khóa biểu nhà trường dễ dàng hơn
-            </p>
+            <div>
+              <h2 className="text-2xl sm:text-[26px] font-bold text-[#0F172A] tracking-tight">
+                Đăng nhập
+              </h2>
+              <p className="text-xs sm:text-sm text-[#64748B] font-normal mt-1 leading-relaxed">
+                Quản lý thời khóa biểu nhà trường dễ dàng hơn
+              </p>
+            </div>
           </div>
 
           {/* Friendly Error Alert (if any) */}
           {loginError && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl text-xs font-medium flex items-start gap-3 text-left">
-              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-xl text-xs font-medium flex items-start gap-2.5 text-left">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <div className="space-y-0.5">
-                <span className="font-bold block text-rose-900">Đăng nhập không thành công</span>
-                <span className="block text-rose-700 leading-relaxed">
-                  Vui lòng thử lại bằng tài khoản Google được cấp quyền.
+                <span className="font-semibold block text-rose-900">Đăng nhập không thành công</span>
+                <span className="block text-rose-700 leading-relaxed text-[11px]">
+                  Tài khoản Google chưa được cấp quyền trong hệ thống. Vui lòng liên hệ Quản trị viên trường để được thêm vào danh sách.
                 </span>
               </div>
             </div>
           )}
 
           {/* Google Login Action Button */}
-          <div className="space-y-4 pt-1">
+          <div className="space-y-3 pt-1">
             <button
               id="google-login-btn"
               type="button"
               onClick={onLoginGoogle}
               disabled={isLoggingIn || !authReady}
-              className={`w-full h-[54px] px-6 rounded-[14px] font-semibold text-sm flex items-center justify-center gap-3 transition-all duration-200 border ${
+              className={`w-full h-[52px] px-5 rounded-[12px] font-medium text-sm sm:text-base flex items-center justify-center gap-3 transition-all duration-150 border ${
                 isLoggingIn || !authReady
-                  ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                  : 'bg-white border-slate-200 text-slate-800 hover:bg-slate-50/80 hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99] cursor-pointer shadow-sm'
+                  ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                  : 'bg-white border-[#E2E8F0] text-[#0F172A] hover:bg-slate-50 hover:border-slate-300 hover:shadow-sm active:scale-[0.99] cursor-pointer'
               }`}
             >
               {isLoggingIn ? (
                 <>
-                  <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
-                  <span className="text-slate-700">Đang đăng nhập…</span>
+                  <RefreshCw className="w-4 h-4 animate-spin text-[#2563EB]" />
+                  <span className="text-[#0F172A] font-medium text-sm">Đang đăng nhập…</span>
                 </>
               ) : (
                 <>
@@ -276,30 +287,30 @@ export const LoginView: React.FC<LoginViewProps> = ({
                       d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                     />
                   </svg>
-                  <span className="font-semibold text-slate-800 text-base">Tiếp tục với Google</span>
+                  <span className="font-semibold text-slate-800 text-sm sm:text-base">
+                    Tiếp tục với Google
+                  </span>
                 </>
               )}
             </button>
 
             {!authReady && (
-              <p className="text-center text-xs text-slate-400 animate-pulse">
+              <p className="text-center text-xs text-[#64748B] animate-pulse">
                 Đang khởi tạo hệ thống xác thực…
               </p>
             )}
 
-            {/* Security Notice */}
-            <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 font-normal pt-1">
+            {/* Subtle Security Notice */}
+            <div className="flex items-center justify-center gap-1.5 text-xs text-[#64748B] font-normal pt-0.5">
               <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <span>Đăng nhập an toàn bằng tài khoản Google</span>
             </div>
           </div>
 
-          {/* Target Audience Badge */}
-          <div className="pt-4 border-t border-slate-100 text-center">
-            <div className="inline-flex items-center gap-2 text-xs text-slate-500 bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200/70">
-              <Building2 className="w-4 h-4 text-blue-600 shrink-0" />
-              <span>Dành cho Ban giám hiệu & cán bộ phụ trách thời khóa biểu</span>
-            </div>
+          {/* Target Audience Line */}
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-[#64748B]">
+            <Building2 className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
+            <span>Dành cho Ban giám hiệu &amp; cán bộ phụ trách thời khóa biểu</span>
           </div>
         </div>
       </div>

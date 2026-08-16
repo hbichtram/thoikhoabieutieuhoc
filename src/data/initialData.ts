@@ -91,7 +91,7 @@ export const initialClasses: ClassItem[] = [
   { id: 'c3', name: '4A', grade: 4, homeroomTeacherId: 't6', shift: 'morning' },
   { id: 'c4', name: '4B', grade: 4, homeroomTeacherId: 't3', shift: 'morning' },
   { id: 'c5', name: '5A', grade: 5, homeroomTeacherId: 't1', shift: 'morning' },
-  { id: 'c6', name: '5B', grade: 6, homeroomTeacherId: 't4', shift: 'morning' },
+  { id: 'c6', name: '5B', grade: 5, homeroomTeacherId: 't4', shift: 'morning' },
 ];
 
 export const initialSubjects: Subject[] = [

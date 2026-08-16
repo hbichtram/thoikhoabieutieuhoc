@@ -264,8 +264,16 @@ export default function App() {
             setStoredTeachers(normalized);
           }
           if (remoteData.classes) {
-            setClasses(remoteData.classes);
-            setStoredClasses(remoteData.classes);
+            const normalizedClasses = remoteData.classes.map((c: ClassItem) => {
+              let g = c.grade;
+              if (!g || g > 5 || g < 1) {
+                const match = c.name?.match(/^([1-5])/);
+                g = match ? parseInt(match[1], 10) : (g ? Math.min(5, Math.max(1, g)) : 1);
+              }
+              return { ...c, grade: g };
+            });
+            setClasses(normalizedClasses);
+            setStoredClasses(normalizedClasses);
           }
           if (remoteData.subjects) {
             setSubjects(remoteData.subjects);

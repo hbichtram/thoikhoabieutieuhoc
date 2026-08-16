@@ -26,7 +26,7 @@ export interface Teacher {
 export interface ClassItem {
   id: string;
   name: string; // e.g. "4A"
-  grade: number; // 3 | 4 | 5
+  grade: number; // 1 | 2 | 3 | 4 | 5 (Tiểu học: Khối 1 đến Khối 5)
   homeroomTeacherId?: string; // GVCN
   shift: 'morning' | 'afternoon' | 'both'; // Buổi học
 }

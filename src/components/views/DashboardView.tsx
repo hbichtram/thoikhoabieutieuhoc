@@ -102,12 +102,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       return pA - pB;
     });
 
-  // Grade range description for Lớp học card
-  const grades = Array.from(new Set(classes.map((c) => c.grade).filter(Boolean))).sort();
+  // Grade range description for Lớp học card (Tiểu học: Khối 1 đến Khối 5)
+  const validGrades = classes
+    .map((c) => {
+      let g = c.grade;
+      if (!g || g > 5 || g < 1) {
+        const match = c.name?.match(/^([1-5])/);
+        g = match ? parseInt(match[1], 10) : (g ? Math.min(5, Math.max(1, g)) : 1);
+      }
+      return g;
+    })
+    .filter((g) => g >= 1 && g <= 5);
+
+  const uniqueGrades = Array.from(new Set(validGrades)).sort((a, b) => a - b);
+  const minGrade = uniqueGrades.length > 0 ? Math.min(...uniqueGrades) : 1;
+  const maxGrade = uniqueGrades.length > 0 ? Math.min(5, Math.max(...uniqueGrades)) : 5;
+
   const gradeLabel =
-    grades.length > 0
-      ? `Khối ${Math.min(...grades)}–${Math.max(...grades)}`
-      : 'Khối 3–5';
+    uniqueGrades.length > 1
+      ? `Khối ${minGrade}–${maxGrade}`
+      : uniqueGrades.length === 1
+      ? `Khối ${uniqueGrades[0]}`
+      : 'Khối 1–5';
 
   // Metrics calculation for clear separation
   const unassignedPeriods = Math.max(0, stats.totalRequiredPeriods - stats.totalPlacedPeriods);

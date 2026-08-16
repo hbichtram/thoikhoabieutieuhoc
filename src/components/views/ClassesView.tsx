@@ -114,19 +114,21 @@ export const ClassesView: React.FC<ClassesViewProps> = ({
     e.preventDefault();
     if (!name.trim()) return;
 
+    const safeGrade = Math.min(5, Math.max(1, grade || 1));
+
     if (editingClass) {
       onUpdateClass({
         ...editingClass,
-        name,
-        grade,
+        name: name.trim(),
+        grade: safeGrade,
         homeroomTeacherId: homeroomTeacherId || undefined,
         shift,
       });
     } else {
       const newClass: ClassItem = {
         id: `c_${Date.now()}`,
-        name,
-        grade,
+        name: name.trim(),
+        grade: safeGrade,
         homeroomTeacherId: homeroomTeacherId || undefined,
         shift,
       };
@@ -287,7 +289,12 @@ export const ClassesView: React.FC<ClassesViewProps> = ({
                   required
                   placeholder="Ví dụ: 4A"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setName(val);
+                    const m = val.trim().match(/^([1-5])/);
+                    if (m) setGrade(parseInt(m[1], 10));
+                  }}
                   className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500 font-bold text-sm"
                 />
               </div>

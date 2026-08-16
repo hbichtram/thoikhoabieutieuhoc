@@ -46,14 +46,30 @@ export const setStoredTeachers = (teachers: Teacher[]) => {
 export const getStoredClasses = (): ClassItem[] => {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.CLASSES);
-    return data ? JSON.parse(data) : initialClasses;
+    const list: ClassItem[] = data ? JSON.parse(data) : initialClasses;
+    return list.map((c) => {
+      let g = c.grade;
+      if (!g || g > 5 || g < 1) {
+        const match = c.name?.match(/^([1-5])/);
+        g = match ? parseInt(match[1], 10) : (g ? Math.min(5, Math.max(1, g)) : 1);
+      }
+      return { ...c, grade: g };
+    });
   } catch {
     return initialClasses;
   }
 };
 
 export const setStoredClasses = (classes: ClassItem[]) => {
-  localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(classes));
+  const normalized = classes.map((c) => {
+    let g = c.grade;
+    if (!g || g > 5 || g < 1) {
+      const match = c.name?.match(/^([1-5])/);
+      g = match ? parseInt(match[1], 10) : (g ? Math.min(5, Math.max(1, g)) : 1);
+    }
+    return { ...c, grade: g };
+  });
+  localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(normalized));
 };
 
 export const getStoredSubjects = (): Subject[] => {
