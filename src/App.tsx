@@ -148,6 +148,9 @@ export default function App() {
       setActiveSchoolId(targetSchoolId);
 
       const selectedSchool = schoolList.find((s) => s.id === targetSchoolId);
+      console.log(`[USER SCHOOL ID] ${profile.schoolId || 'none'}`);
+      console.log(`[ACTIVE SCHOOL ID] ${targetSchoolId || 'none'}`);
+      console.log(`[SCHOOL LOADED] ${targetSchoolId || 'none'}`);
       if (selectedSchool) {
         console.log(`[SCHOOL DOCUMENT]\npath: schools/${selectedSchool.id}\nexists: true\nname: ${selectedSchool.name}`);
         console.log(`[SCHOOL DISPLAY]\nschoolId: ${selectedSchool.id}\nschoolName: ${selectedSchool.name}`);
@@ -160,6 +163,9 @@ export default function App() {
         setSchools([]);
         setActiveSchoolId('');
         setSchoolLoadError('unassigned');
+        console.log(`[USER SCHOOL ID] none`);
+        console.log(`[ACTIVE SCHOOL ID] none`);
+        console.log(`[SCHOOL LOADED] none`);
         console.log(`[SCHOOL DOCUMENT]\npath: none\nexists: false\nname: none`);
         console.log(`[SCHOOL DISPLAY]\nschoolId: none\nschoolName: none`);
       } else {
@@ -169,12 +175,18 @@ export default function App() {
           setSchools([schoolDoc]);
           setActiveSchoolId(schoolDoc.id);
           setSchoolLoadError(null);
+          console.log(`[USER SCHOOL ID] ${cleanSchoolId}`);
+          console.log(`[ACTIVE SCHOOL ID] ${schoolDoc.id}`);
+          console.log(`[SCHOOL LOADED] ${schoolDoc.id}`);
           console.log(`[SCHOOL DOCUMENT]\npath: schools/${schoolDoc.id}\nexists: true\nname: ${schoolDoc.name}`);
           console.log(`[SCHOOL DISPLAY]\nschoolId: ${schoolDoc.id}\nschoolName: ${schoolDoc.name}`);
         } else {
           setSchools([]);
           setActiveSchoolId('');
           setSchoolLoadError('not_found');
+          console.log(`[USER SCHOOL ID] ${cleanSchoolId}`);
+          console.log(`[ACTIVE SCHOOL ID] none`);
+          console.log(`[SCHOOL LOADED] none`);
           console.log(`[SCHOOL DOCUMENT]\npath: schools/${cleanSchoolId}\nexists: false\nname: none`);
           console.log(`[SCHOOL DISPLAY]\nschoolId: ${cleanSchoolId}\nschoolName: none`);
         }
@@ -183,6 +195,9 @@ export default function App() {
       setSchools([]);
       setActiveSchoolId('');
       setSchoolLoadError(null);
+      console.log(`[USER SCHOOL ID] none`);
+      console.log(`[ACTIVE SCHOOL ID] none`);
+      console.log(`[SCHOOL LOADED] none`);
     }
   }, []);
 
@@ -255,6 +270,7 @@ export default function App() {
     setIsSyncing(true);
     setSyncError(null);
 
+    console.log(`[TIMETABLE PATH] schools/${targetSchoolId}/timetable_data/main`);
     if (userProfile.role === 'manager') {
       console.log(`[MANAGER TIMETABLE LOAD]\npath: schools/${targetSchoolId}/timetable_data/main`);
     }

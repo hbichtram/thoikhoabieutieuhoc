@@ -637,7 +637,7 @@ export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise
   if (!cleanEmail) return null;
   const key = getEmailKey(cleanEmail);
 
-  // 1. Direct get userInvites/{cleanEmail}
+  // 1. Direct get userInvites/{cleanEmail} (Highest priority for pre-registered invites)
   try {
     const inviteSnap1 = await getDoc(doc(db, "userInvites", cleanEmail));
     if (inviteSnap1.exists()) {
@@ -655,16 +655,17 @@ export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise
     } catch (_) {}
   }
 
-  // 3. Direct get authorized_users/{cleanEmail}
+  // 3. Query users where email == cleanEmail (Find any pre-created user profile)
   try {
-    const authSnap = await getDoc(doc(db, "authorized_users", cleanEmail));
-    if (authSnap.exists()) {
-      const d = authSnap.data() as any;
+    const q1 = query(collection(db, "users"), where("email", "==", cleanEmail));
+    const snap1 = await getDocs(q1);
+    if (!snap1.empty) {
+      const d = snap1.docs[0].data() as any;
       return {
         email: cleanEmail,
         displayName: d.displayName || d.name || cleanEmail.split('@')[0],
         role: d.role || 'manager',
-        status: d.status || 'invited',
+        status: d.status || 'active',
         schoolId: d.schoolId || null,
         schoolName: d.schoolName || null,
         createdAt: d.createdAt || new Date().toISOString(),
@@ -691,17 +692,16 @@ export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise
     }
   } catch (_) {}
 
-  // 5. Query users where email == cleanEmail (works if allowed)
+  // 5. Fallback: Direct get authorized_users/{cleanEmail}
   try {
-    const q1 = query(collection(db, "users"), where("email", "==", cleanEmail));
-    const snap1 = await getDocs(q1);
-    if (!snap1.empty) {
-      const d = snap1.docs[0].data() as any;
+    const authSnap = await getDoc(doc(db, "authorized_users", cleanEmail));
+    if (authSnap.exists()) {
+      const d = authSnap.data() as any;
       return {
         email: cleanEmail,
         displayName: d.displayName || d.name || cleanEmail.split('@')[0],
         role: d.role || 'manager',
-        status: d.status || 'active',
+        status: d.status || 'invited',
         schoolId: d.schoolId || null,
         schoolName: d.schoolName || null,
         createdAt: d.createdAt || new Date().toISOString(),
@@ -717,9 +717,9 @@ export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise
  * Sync or retrieve user profile in Firestore: users/{googleUid}
  * Luồng chuẩn:
  * AUTH READY -> Lấy UID + email Google -> Xác định Admin hay Manager
- * -> Tìm hồ sơ user qua userInvites/{emailKey}
- * -> Nếu invited -> liên kết UID -> active + lastLoginAt
- * -> Ghi users/{googleUid} -> Xác định schoolId -> SYNCED
+ * -> Tìm hồ sơ user trong users/{googleUid} & userInvites/{cleanEmail}
+ * -> Xác định schoolId chính xác (ưu tiên cấu hình được Admin chỉ định gần nhất)
+ * -> Ghi users/{googleUid} -> Đăng nhập thành công với đúng schoolId
  */
 export async function syncUserProfile(user: User): Promise<UserProfile | null> {
   const googleUid = user.uid;
@@ -728,7 +728,8 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
   const now = new Date().toISOString();
   const isAdmin = isSystemAdminUser(user);
 
-  console.log(`[AUTH READY]\nuid: ${googleUid}\nemail: ${rawEmail || 'none'}`);
+  console.log(`[AUTH UID] ${googleUid}`);
+  console.log(`[AUTH EMAIL] ${cleanEmail || 'none'}`);
 
   try {
     // 1. If System Admin -> full admin access
@@ -753,8 +754,9 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         console.warn("[AUTH] Admin setDoc warning:", err);
       }
 
-      console.log(`[USER PROFILE]\nuid: ${googleUid}\nemail: ${cleanEmail}\nrole: admin\nschoolId: none\nstatus: active`);
-      console.log(`[AUTHORIZATION]\nisAdmin: true\nisManager: false\nisApproved: true`);
+      console.log(`[USER PROFILE]`, adminProfile);
+      console.log(`[USER ROLE] admin`);
+      console.log(`[USER SCHOOL ID] none`);
       return adminProfile;
     }
 
@@ -769,7 +771,7 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       console.warn("[PROFILE LOOKUP] users/{uid} check:", err);
     }
 
-    // 3. Search pre-registered invite by email in userInvites
+    // 3. Search pre-registered invite / admin assignment by email
     let inviteData: UserInvite | null = null;
     if (cleanEmail) {
       inviteData = await findPreRegisteredProfileByEmail(rawEmail);
@@ -778,8 +780,8 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
     // 4. If neither existing profile nor invite exists -> Unauthorized
     if (!existingProfile && !inviteData) {
       console.warn(`[USER PROFILE] No authorized invite found for email: ${cleanEmail} (UID: ${googleUid})`);
-      console.log(`[USER PROFILE]\nuid: ${googleUid}\nemail: ${cleanEmail}\nrole: none\nschoolId: none\nstatus: unauthorized`);
-      console.log(`[AUTHORIZATION]\nisAdmin: false\nisManager: false\nisApproved: false`);
+      console.log(`[USER ROLE] none`);
+      console.log(`[USER SCHOOL ID] none`);
       return null;
     }
 
@@ -807,16 +809,30 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         await setDoc(doc(db, "users", googleUid), disabledProfile, { merge: true });
       } catch (_) {}
 
-      console.log(`[USER PROFILE]\nuid: ${googleUid}\nemail: ${cleanEmail}\nrole: ${disabledProfile.role}\nschoolId: ${disabledProfile.schoolId || 'none'}\nstatus: disabled`);
-      console.log(`[AUTHORIZATION]\nisAdmin: false\nisManager: false\nisApproved: false`);
+      console.log(`[USER PROFILE]`, disabledProfile);
+      console.log(`[USER ROLE] ${disabledProfile.role}`);
+      console.log(`[USER SCHOOL ID] ${disabledProfile.schoolId || 'none'}`);
       return disabledProfile;
     }
 
-    // 6. Link UID & Activate Account:
-    // Retain schoolId, schoolName, role granted by Admin. Promote status to 'active'.
+    // 6. Resolve final schoolId, role, status:
+    // Priority:
+    // a) If inviteData has a specific schoolId assigned by Admin, use it.
+    // b) Else if existingProfile has a schoolId, retain it.
+    // c) Never default to school_001.
     const finalRole: UserRole = inviteData?.role || existingProfile?.role || 'manager';
-    const finalSchoolId = inviteData?.schoolId !== undefined ? inviteData.schoolId : (existingProfile?.schoolId || null);
-    const finalSchoolName = inviteData?.schoolName !== undefined ? inviteData.schoolName : (existingProfile?.schoolName || null);
+    
+    let finalSchoolId: string | null = null;
+    let finalSchoolName: string | null = null;
+
+    if (inviteData?.schoolId && inviteData.schoolId.trim()) {
+      finalSchoolId = inviteData.schoolId.trim();
+      finalSchoolName = inviteData.schoolName || null;
+    } else if (existingProfile?.schoolId && existingProfile.schoolId.trim()) {
+      finalSchoolId = existingProfile.schoolId.trim();
+      finalSchoolName = existingProfile.schoolName || null;
+    }
+
     const finalDisplayName = user.displayName || inviteData?.displayName || inviteData?.name || existingProfile?.displayName || cleanEmail.split('@')[0] || "Cán bộ quản lý";
     const finalCreatedAt = inviteData?.createdAt || existingProfile?.createdAt || now;
 
@@ -834,18 +850,20 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       lastLoginAt: now,
     };
 
-    // Save to users/{googleUid}
+    // Save canonical profile to users/{googleUid}
     try {
       await setDoc(doc(db, "users", googleUid), userProfile, { merge: true });
     } catch (writeErr) {
       console.warn("[USER PROFILE] Write users/{uid} error:", writeErr);
     }
 
-    // Update invite status to active & link UID
+    // Synchronize invite / authorized_users to active with UID and finalSchoolId
     if (cleanEmail) {
       const linkUpdate = {
         status: 'active' as UserStatus,
         uid: googleUid,
+        schoolId: finalSchoolId,
+        schoolName: finalSchoolName,
         lastLoginAt: now,
         updatedAt: now,
       };
@@ -859,8 +877,9 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       } catch (_) {}
     }
 
-    console.log(`[USER PROFILE]\nuid: ${googleUid}\nemail: ${cleanEmail}\nrole: ${finalRole}\nschoolId: ${finalSchoolId || 'none'}\nstatus: active`);
-    console.log(`[AUTHORIZATION]\nisAdmin: false\nisManager: ${finalRole === 'manager'}\nisApproved: true`);
+    console.log(`[USER PROFILE]`, userProfile);
+    console.log(`[USER ROLE] ${finalRole}`);
+    console.log(`[USER SCHOOL ID] ${finalSchoolId || 'none'}`);
 
     return userProfile;
   } catch (error: any) {
@@ -989,6 +1008,29 @@ export async function createUserProfileByAdmin(
       updatedAt: now,
     };
     await setDoc(userDocRef, data, { merge: true });
+
+    // 3. If email exists, ensure any existing doc in users matching this email is also updated
+    if (cleanEmail) {
+      try {
+        const q = query(collection(db, "users"), where("email", "==", cleanEmail));
+        const snap = await getDocs(q);
+        const promises: Promise<any>[] = [];
+        snap.forEach((d) => {
+          if (d.id !== profile.uid) {
+            promises.push(setDoc(d.ref, {
+              role: profile.role || 'manager',
+              status: profile.status || 'invited',
+              schoolId: profile.schoolId || null,
+              schoolName: profile.schoolName || null,
+              displayName: profile.displayName || cleanEmail.split('@')[0],
+              updatedAt: now,
+            }, { merge: true }));
+          }
+        });
+        await Promise.all(promises);
+      } catch (_) {}
+    }
+
     console.log(`[USER PROFILE] Successfully created user profile:`, data);
     return true;
   } catch (error: any) {
@@ -1018,9 +1060,10 @@ export async function updateUserProfileByAdmin(
       } catch (_) {}
     }
 
-    // Update userInvites and authorized_users
-    if (targetEmail) {
-      const cleanEmail = targetEmail.trim().toLowerCase();
+    const cleanEmail = targetEmail ? targetEmail.trim().toLowerCase() : '';
+
+    // 1. Update userInvites and authorized_users
+    if (cleanEmail) {
       await updateUserInvite(cleanEmail, {
         ...(updates.role ? { role: updates.role } : {}),
         ...(updates.status ? { status: updates.status } : {}),
@@ -1030,16 +1073,38 @@ export async function updateUserProfileByAdmin(
       });
     }
 
-    // Update users/{uid} if real uid
+    // 2. Update users/{uid} directly
+    const updateData = {
+      ...updates,
+      updatedAt: now,
+    };
     if (!uid.startsWith("auth_") && !uid.startsWith("invite_")) {
-      const updateData = {
-        ...updates,
-        updatedAt: now,
-      };
       await setDoc(userDocRef, updateData, { merge: true });
     }
 
-    console.log(`[USER PROFILE] Successfully updated user ${uid}:`, updates);
+    // 3. IMPORTANT: Also query any user docs matching email to update their schoolId & role
+    if (cleanEmail) {
+      try {
+        const q = query(collection(db, "users"), where("email", "==", cleanEmail));
+        const snap = await getDocs(q);
+        const promises: Promise<any>[] = [];
+        snap.forEach((d) => {
+          promises.push(setDoc(d.ref, {
+            ...(updates.role ? { role: updates.role } : {}),
+            ...(updates.status ? { status: updates.status } : {}),
+            ...(updates.schoolId !== undefined ? { schoolId: updates.schoolId } : {}),
+            ...(updates.schoolName !== undefined ? { schoolName: updates.schoolName } : {}),
+            ...(updates.displayName ? { displayName: updates.displayName } : {}),
+            updatedAt: now,
+          }, { merge: true }));
+        });
+        await Promise.all(promises);
+      } catch (multiErr) {
+        console.warn("[USER PROFILE] Multi-doc sync warning:", multiErr);
+      }
+    }
+
+    console.log(`[USER PROFILE] Successfully updated user ${uid} / ${cleanEmail}:`, updates);
     return true;
   } catch (error: any) {
     console.error(`[USER PROFILE] Error updating user ${uid}:`, error);
@@ -1063,9 +1128,11 @@ export async function deleteUserProfileByAdmin(uid: string, email?: string | nul
       } catch (_) {}
     }
 
+    const cleanEmail = targetEmail ? targetEmail.trim().toLowerCase() : '';
+
     // Delete from userInvites and authorized_users
-    if (targetEmail) {
-      await deleteUserInvite(targetEmail.trim().toLowerCase());
+    if (cleanEmail) {
+      await deleteUserInvite(cleanEmail);
     }
 
     // Delete from users collection
@@ -1073,8 +1140,21 @@ export async function deleteUserProfileByAdmin(uid: string, email?: string | nul
       const userDocRef = doc(db, "users", uid);
       await deleteDoc(userDocRef);
     }
+
+    // Also delete any other doc in users collection matching email
+    if (cleanEmail) {
+      try {
+        const q = query(collection(db, "users"), where("email", "==", cleanEmail));
+        const snap = await getDocs(q);
+        const promises: Promise<any>[] = [];
+        snap.forEach((d) => {
+          promises.push(deleteDoc(d.ref));
+        });
+        await Promise.all(promises);
+      } catch (_) {}
+    }
     
-    console.log(`[USER PROFILE] Successfully deleted user ${uid} / ${targetEmail}`);
+    console.log(`[USER PROFILE] Successfully deleted user ${uid} / ${cleanEmail}`);
     return true;
   } catch (error: any) {
     console.error(`[USER PROFILE] Error deleting user profile ${uid}:`, error);
