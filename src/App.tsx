@@ -91,7 +91,7 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [schools, setSchools] = useState<School[]>([]);
   const [activeSchoolId, setActiveSchoolId] = useState<string>('');
-  const [schoolLoadError, setSchoolLoadError] = useState<'unassigned' | 'not_found' | null>(null);
+  const [schoolLoadError, setSchoolLoadError] = useState<'unassigned' | 'not_found' | 'permission_denied' | null>(null);
 
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -149,36 +149,61 @@ export default function App() {
 
       const selectedSchool = schoolList.find((s) => s.id === targetSchoolId);
       if (selectedSchool) {
-        console.log(`[SCHOOL]\ndocument = schools/${selectedSchool.id}\nschoolName = ${selectedSchool.name}`);
+        console.log(`[SCHOOL] Requested school document: schools/${selectedSchool.id}`);
+        console.log(`[SCHOOL] Document exists: true`);
+        console.log(`[SCHOOL] School name: ${selectedSchool.name}`);
       } else {
-        console.log(`[SCHOOL]\ndocument = none\nschoolName = none`);
+        console.log(`[SCHOOL] Requested school document: none`);
+        console.log(`[SCHOOL] Document exists: false`);
+        console.log(`[SCHOOL] School name: none`);
       }
     } else if (profile.role === 'manager' && profile.status === 'active') {
       if (!profile.schoolId || !profile.schoolId.trim()) {
         setSchools([]);
         setActiveSchoolId('');
         setSchoolLoadError('unassigned');
-        console.log(`[SCHOOL]\ndocument = none\nschoolName = none`);
+        console.log(`[SCHOOL] Requested school document: none`);
+        console.log(`[SCHOOL] Document exists: false`);
+        console.log(`[SCHOOL] School name: none`);
       } else {
         const cleanSchoolId = profile.schoolId.trim();
-        const schoolDoc = await getSchool(cleanSchoolId);
-        if (schoolDoc) {
-          setSchools([schoolDoc]);
-          setActiveSchoolId(schoolDoc.id);
-          setSchoolLoadError(null);
-          console.log(`[SCHOOL]\ndocument = schools/${schoolDoc.id}\nschoolName = ${schoolDoc.name}`);
-        } else {
+        console.log(`[SCHOOL] Requested school document: schools/${cleanSchoolId}`);
+        try {
+          const schoolDoc = await getSchool(cleanSchoolId);
+          if (schoolDoc) {
+            setSchools([schoolDoc]);
+            setActiveSchoolId(schoolDoc.id);
+            setSchoolLoadError(null);
+            console.log(`[SCHOOL] Document exists: true`);
+            console.log(`[SCHOOL] School name: ${schoolDoc.name}`);
+          } else {
+            setSchools([]);
+            setActiveSchoolId('');
+            setSchoolLoadError('not_found');
+            console.log(`[SCHOOL] Document exists: false`);
+            console.log(`[SCHOOL] School name: none`);
+          }
+        } catch (err: any) {
+          console.error(`[SCHOOL LOAD ERROR]`, err);
           setSchools([]);
           setActiveSchoolId('');
-          setSchoolLoadError('not_found');
-          console.log(`[SCHOOL]\ndocument = schools/${cleanSchoolId}\nschoolName = none`);
+          if (err?.code === 'permission-denied') {
+            setSchoolLoadError('permission_denied');
+            console.log(`[SCHOOL] Document exists: permission-denied`);
+          } else {
+            setSchoolLoadError('not_found');
+            console.log(`[SCHOOL] Document exists: false`);
+          }
+          console.log(`[SCHOOL] School name: none`);
         }
       }
     } else {
       setSchools([]);
       setActiveSchoolId('');
       setSchoolLoadError(null);
-      console.log(`[SCHOOL]\ndocument = none\nschoolName = none`);
+      console.log(`[SCHOOL] Requested school document: none`);
+      console.log(`[SCHOOL] Document exists: false`);
+      console.log(`[SCHOOL] School name: none`);
     }
   }, []);
 
@@ -251,7 +276,7 @@ export default function App() {
     setIsSyncing(true);
     setSyncError(null);
 
-    console.log(`[DATA LOAD]\ntimetable = schools/${targetSchoolId}/timetable_data/main`);
+    console.log(`[DATA] Timetable path: schools/${targetSchoolId}/timetable_data/main`);
     if (userProfile.role === 'manager') {
       console.log(`[MANAGER TIMETABLE LOAD]\npath: schools/${targetSchoolId}/timetable_data/main`);
     }

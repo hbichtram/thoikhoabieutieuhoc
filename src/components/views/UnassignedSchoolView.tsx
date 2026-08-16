@@ -7,7 +7,7 @@ interface UnassignedSchoolViewProps {
   onRefresh: () => void;
   onLogout: () => void;
   isRefreshing?: boolean;
-  reason?: 'unassigned' | 'not_found';
+  reason?: 'unassigned' | 'not_found' | 'permission_denied';
 }
 
 export const UnassignedSchoolView: React.FC<UnassignedSchoolViewProps> = ({
@@ -18,6 +18,7 @@ export const UnassignedSchoolView: React.FC<UnassignedSchoolViewProps> = ({
   reason = 'unassigned',
 }) => {
   const isNotFound = reason === 'not_found';
+  const isPermissionDenied = reason === 'permission_denied';
 
   return (
     <div className="min-h-screen w-full bg-[#0b1329] flex items-center justify-center p-4 sm:p-6 text-slate-800 antialiased font-sans relative overflow-hidden">
@@ -25,17 +26,25 @@ export const UnassignedSchoolView: React.FC<UnassignedSchoolViewProps> = ({
 
       <div className="max-w-lg w-full bg-white rounded-3xl border border-slate-200/90 shadow-2xl overflow-hidden relative z-10">
         {/* Top Header */}
-        <div className="bg-gradient-to-r from-amber-500 to-orange-600 p-7 text-white text-center space-y-2.5">
+        <div className={`p-7 text-white text-center space-y-2.5 ${
+          isPermissionDenied
+            ? 'bg-gradient-to-r from-rose-600 to-red-700'
+            : 'bg-gradient-to-r from-amber-500 to-orange-600'
+        }`}>
           <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center mx-auto shadow-lg border border-white/30">
-            <School className="w-8 h-8 text-white" />
+            {isPermissionDenied ? <AlertTriangle className="w-8 h-8 text-white" /> : <School className="w-8 h-8 text-white" />}
           </div>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-            {isNotFound
+            {isPermissionDenied
+              ? '⛔ Không có quyền truy cập trường học'
+              : isNotFound
               ? '⚠️ Trường được gán cho tài khoản không tồn tại trong hệ thống'
               : '⚠️ Tài khoản chưa được gán trường'}
           </h2>
           <p className="text-xs sm:text-sm text-amber-100 font-medium max-w-sm mx-auto">
-            {isNotFound
+            {isPermissionDenied
+              ? `Không có quyền truy cập mã trường "${userProfile?.schoolId || ''}"`
+              : isNotFound
               ? `Mã trường "${userProfile?.schoolId || ''}" không tìm thấy trên hệ thống`
               : 'Tài khoản đã kích hoạt nhưng cần được phân công vào trường học cụ thể'}
           </p>
@@ -43,13 +52,23 @@ export const UnassignedSchoolView: React.FC<UnassignedSchoolViewProps> = ({
 
         {/* Content Body */}
         <div className="p-6 sm:p-8 space-y-6">
-          <div className="bg-amber-50/80 border border-amber-200/80 rounded-2xl p-4 text-xs text-amber-950 space-y-2 leading-relaxed">
-            <p className="font-semibold text-amber-900 text-sm">
-              {isNotFound ? 'Không tìm thấy dữ liệu trường học' : 'Chưa có mã trường học (schoolId)'}
+          <div className={`border rounded-2xl p-4 text-xs space-y-2 leading-relaxed ${
+            isPermissionDenied
+              ? 'bg-rose-50/80 border-rose-200/80 text-rose-950'
+              : 'bg-amber-50/80 border-amber-200/80 text-amber-950'
+          }`}>
+            <p className="font-semibold text-sm">
+              {isPermissionDenied
+                ? 'Lỗi phân quyền Firestore (permission-denied)'
+                : isNotFound
+                ? 'Không tìm thấy dữ liệu trường học'
+                : 'Chưa có mã trường học (schoolId)'}
             </p>
             <p className="text-slate-600">
-              {isNotFound
-                ? `Hồ sơ của bạn được phân công mã trường "${userProfile?.schoolId}", tuy nhiên tài liệu trường này chưa tồn tại trong cơ sở dữ liệu. Vui lòng thông báo Quản trị viên để kiểm tra hoặc tạo trường.`
+              {isPermissionDenied
+                ? `Tài khoản của bạn được chỉ định mã trường "${userProfile?.schoolId}", nhưng quyền truy cập Firestore bị từ chối. Vui lòng liên hệ Quản trị viên để kiểm tra lại cấu hình phân quyền.`
+                : isNotFound
+                ? `Hồ sơ của bạn được phân công mã trường "${userProfile?.schoolId}", tuy nhiên tài liệu trường này (schools/${userProfile?.schoolId}) chưa tồn tại trong cơ sở dữ liệu. Vui lòng thông báo Quản trị viên để tạo trường.`
                 : 'Vui lòng liên hệ Quản trị viên hệ thống để được gán vào trường học của bạn trước khi bắt đầu xếp thời khóa biểu.'}
             </p>
           </div>

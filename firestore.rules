@@ -98,10 +98,12 @@ service cloud.firestore {
 
     // 3. Schools Collection: schools/{schoolId}
     match /schools/{schoolId} {
-      // System Admin has full permissions (create, read, update, delete)
+      // System Admin has full write permissions
       allow create, delete: if isSystemAdmin();
-      allow read: if isSystemAdmin() || isManagerOfSchool(schoolId);
       allow update: if isSystemAdmin() || isManagerOfSchool(schoolId);
+
+      // Authenticated users can read school metadata
+      allow read: if isAuthenticated();
 
       // Timetable data subcollection: schools/{schoolId}/timetable_data/{docId}
       match /timetable_data/{docId} {

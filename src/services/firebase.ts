@@ -725,7 +725,8 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
   const now = new Date().toISOString();
   const isAdmin = isSystemAdminUser(user);
 
-  console.log(`[AUTH]\nuid = ${googleUid}`);
+  console.log(`[AUTH] Firebase UID: ${googleUid}`);
+  console.log(`[AUTH] Email: ${cleanEmail || 'none'}`);
 
   try {
     // 1. If System Admin -> full admin access
@@ -750,7 +751,7 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         console.warn("[AUTH] Admin setDoc warning:", err);
       }
 
-      console.log(`[USER PROFILE]\ndocument = users/${googleUid}\nemail = ${cleanEmail || 'none'}\nrole = admin\nschoolId = none`);
+      console.log(`[PROFILE] schoolId: none`);
       return adminProfile;
     }
 
@@ -771,41 +772,14 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       inviteData = await findPreRegisteredProfileByEmail(rawEmail);
     }
 
-    // 4. Special target profile auto-heal for hongbichtram13@gmail.com
-    if (cleanEmail === 'hongbichtram13@gmail.com' || googleUid === 'k5k9h9DfSOYvcZVxhCNkC3kHL3w2') {
-      const targetSchoolId = inviteData?.schoolId || (existingProfile?.schoolId && existingProfile.schoolId !== 'school_001' ? existingProfile.schoolId : 'school_002');
-      const targetSchoolName = inviteData?.schoolName || 'Trường Tiểu học Nguyễn Du';
-      
-      const fixedProfile: UserProfile = {
-        uid: googleUid,
-        displayName: user.displayName || inviteData?.displayName || existingProfile?.displayName || "Hồng Bích Trâm",
-        email: cleanEmail,
-        photoURL: user.photoURL || existingProfile?.photoURL || null,
-        role: 'manager',
-        status: 'active',
-        schoolId: targetSchoolId,
-        schoolName: targetSchoolName,
-        createdAt: existingProfile?.createdAt || inviteData?.createdAt || now,
-        updatedAt: now,
-        lastLoginAt: now,
-      };
-
-      try {
-        await setDoc(doc(db, "users", googleUid), fixedProfile, { merge: true });
-      } catch (_) {}
-
-      console.log(`[USER PROFILE]\ndocument = users/${googleUid}\nemail = ${cleanEmail}\nrole = manager\nschoolId = ${targetSchoolId}`);
-      return fixedProfile;
-    }
-
-    // 5. If neither existing profile nor invite exists -> Unauthorized
+    // 4. If neither existing profile nor invite exists -> Unauthorized
     if (!existingProfile && !inviteData) {
       console.warn(`[USER PROFILE] No authorized invite found for email: ${cleanEmail} (UID: ${googleUid})`);
-      console.log(`[USER PROFILE]\ndocument = users/${googleUid}\nemail = ${cleanEmail}\nrole = none\nschoolId = none`);
+      console.log(`[PROFILE] schoolId: none`);
       return null;
     }
 
-    // 6. If account is explicitly disabled by Admin
+    // 5. If account is explicitly disabled by Admin
     const isExplicitlyDisabled = 
       (inviteData && inviteData.status === 'disabled') ||
       (!inviteData && existingProfile && existingProfile.status === 'disabled');
@@ -829,15 +803,15 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
         await setDoc(doc(db, "users", googleUid), disabledProfile, { merge: true });
       } catch (_) {}
 
-      console.log(`[USER PROFILE]\ndocument = users/${googleUid}\nemail = ${cleanEmail}\nrole = ${disabledProfile.role}\nschoolId = ${disabledProfile.schoolId || 'none'}`);
+      console.log(`[PROFILE] schoolId: ${disabledProfile.schoolId || 'none'}`);
       return disabledProfile;
     }
 
-    // 7. Resolve final schoolId, role, status:
+    // 6. Resolve final schoolId, role, status:
     // Priority:
     // a) If inviteData has a specific schoolId assigned by Admin, use it.
     // b) Else if existingProfile has a schoolId, retain it.
-    // c) If neither is assigned, schoolId is null (NEVER fallback to school_001).
+    // c) If neither is assigned, schoolId is null (NEVER fallback to school_001 or any default).
     const finalRole: UserRole = inviteData?.role || existingProfile?.role || 'manager';
     
     let finalSchoolId: string | null = null;
@@ -895,7 +869,7 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       } catch (_) {}
     }
 
-    console.log(`[USER PROFILE]\ndocument = users/${googleUid}\nemail = ${cleanEmail}\nrole = ${finalRole}\nschoolId = ${finalSchoolId || 'none'}`);
+    console.log(`[PROFILE] schoolId: ${finalSchoolId || 'none'}`);
 
     return userProfile;
   } catch (error: any) {
@@ -1260,25 +1234,45 @@ export async function getAllSchools(): Promise<School[]> {
 
 /**
  * Get school by schoolId
+ * Luồng chuẩn:
+ * Ưu tiên đọc trực tiếp document ID: schools/{cleanSchoolId}
+ * Tuyệt đối KHÔNG tìm trường bằng where("code", "==", schoolId) vì code ("SCHOOL_002") và schoolId ("school_002") là 2 trường khác nhau.
  */
 export async function getSchool(schoolId: string): Promise<School | null> {
-  if (!schoolId || !schoolId.trim()) return null;
+  const cleanSchoolId = (schoolId || "").trim();
+  if (!cleanSchoolId) return null;
+
   try {
-    const schoolDocRef = doc(db, "schools", schoolId.trim());
-    const snap = await getDoc(schoolDocRef);
-    if (snap.exists()) {
-      return snap.data() as School;
+    const schoolRef = doc(db, "schools", cleanSchoolId);
+    const schoolSnap = await getDoc(schoolRef);
+
+    if (!schoolSnap.exists()) {
+      return null;
     }
-    return null;
+
+    const data = schoolSnap.data();
+    return {
+      id: schoolSnap.id,
+      name: data?.name || cleanSchoolId,
+      code: data?.code || cleanSchoolId,
+      address: data?.address || "",
+      createdAt: data?.createdAt || "",
+      updatedAt: data?.updatedAt || "",
+      ...data,
+    } as School;
   } catch (error: any) {
-    console.error(`[SCHOOLS] Error fetching school ${schoolId}:`, {
+    console.error(`[SCHOOLS] Error fetching school ${cleanSchoolId}:`, {
       operation: "getDoc",
-      path: `schools/${schoolId.trim()}`,
+      path: `schools/${cleanSchoolId}`,
       errorCode: error?.code,
       errorMessage: error?.message,
       currentUserUid: auth.currentUser?.uid,
       currentUserEmail: auth.currentUser?.email,
     });
+    // Rethrow if permission error so UI can display proper permission-denied alert instead of not_found
+    if (error?.code === "permission-denied") {
+      throw error;
+    }
     return null;
   }
 }
