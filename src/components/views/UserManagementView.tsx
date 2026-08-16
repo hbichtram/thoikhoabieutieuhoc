@@ -216,6 +216,27 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     }
   };
 
+  // Filtered List
+  const filteredUsers = users.filter((u) => {
+    const matchesSearch =
+      (u.displayName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (u.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (u.schoolId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (u.uid || '').toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesRole = selectedRoleFilter === 'all' || u.role === selectedRoleFilter;
+    const matchesStatus = selectedStatusFilter === 'all' || u.status === selectedStatusFilter;
+    const matchesSchool = selectedSchoolFilter === 'all' || u.schoolId === selectedSchoolFilter;
+
+    return matchesSearch && matchesRole && matchesStatus && matchesSchool;
+  });
+
+  useEffect(() => {
+    if (!isLoading) {
+      console.log(`[STAFF LIST] Matching users:\n${filteredUsers.length}`);
+    }
+  }, [filteredUsers.length, isLoading, searchTerm, selectedRoleFilter, selectedStatusFilter, selectedSchoolFilter]);
+
   // Add Pre-registered User (Always Active immediately)
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -252,7 +273,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
       if (success) {
         const targetSchoolLabel = selectedSchool ? selectedSchool.name : 'toàn hệ thống';
-        showToast('success', `✓ Tạo tài khoản thành công! Cán bộ đã được cấp quyền truy cập ${targetSchoolLabel} (🟢 Đang hoạt động).`);
+        showToast('success', `✓ Tạo cán bộ thành công! Đã cấp quyền truy cập ${targetSchoolLabel} (🟢 Đang hoạt động).`);
         setIsAddModalOpen(false);
         setNewEmail('');
         setNewName('');
@@ -266,21 +287,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       setIsProcessing(false);
     }
   };
-
-  // Filtered List
-  const filteredUsers = users.filter((u) => {
-    const matchesSearch =
-      (u.displayName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (u.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (u.schoolId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (u.uid || '').toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesRole = selectedRoleFilter === 'all' || u.role === selectedRoleFilter;
-    const matchesStatus = selectedStatusFilter === 'all' || u.status === selectedStatusFilter;
-    const matchesSchool = selectedSchoolFilter === 'all' || u.schoolId === selectedSchoolFilter;
-
-    return matchesSearch && matchesRole && matchesStatus && matchesSchool;
-  });
 
   const totalUsers = users.length;
   const activeUsers = users.filter((u) => u.status === 'active').length;

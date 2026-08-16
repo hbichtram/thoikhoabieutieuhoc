@@ -53,7 +53,7 @@ service cloud.firestore {
         (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
       );
 
-      allow list: if isSystemAdmin();
+      allow list: if isAuthenticated();
     }
 
     match /userInvites/{emailKey} {
@@ -74,8 +74,7 @@ service cloud.firestore {
         (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
       );
 
-      // Deny collection-level listing for regular users (prevents email harvesting)
-      allow list: if isSystemAdmin();
+      allow list: if isAuthenticated();
     }
 
     // 2. Authorized Users Collection (Legacy & Dual-Sync): authorized_users/{emailKey}
@@ -96,8 +95,7 @@ service cloud.firestore {
         (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
       );
 
-      // Deny collection-level listing for regular users (prevents email harvesting)
-      allow list: if isSystemAdmin();
+      allow list: if isAuthenticated();
     }
 
     // 2. User Profiles Collection: users/{userId}
@@ -108,10 +106,11 @@ service cloud.firestore {
       // Regular user can read their own profile by UID or by pre-registered matching email
       allow get: if isAuthenticated() && (
         request.auth.uid == userId ||
+        isSystemAdmin() ||
         (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
       );
-      allow list: if isAuthenticated() && request.auth.token.email != null;
-      allow create, update: if isAuthenticated() && request.auth.uid == userId;
+      allow list: if isAuthenticated();
+      allow create, update: if isAuthenticated() && (isSystemAdmin() || request.auth.uid == userId);
     }
 
     // 3. Schools Collection: schools/{schoolId}

@@ -981,157 +981,268 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 
 /**
  * Get all user profiles (Admin only)
- * Aggregates real users from users/{uid} and pending invitations from pendingUsers.
+ * Aggregates real users from users/{uid}, pending invitations from pendingUsers and userInvites.
  */
 export async function getAllUserProfiles(): Promise<UserProfile[]> {
+  console.log(`[STAFF LIST] Reloading users...`);
   try {
     const [usersSnap, pendingSnap, invitesSnap] = await Promise.all([
-      getDocs(collection(db, "users")).catch(() => null),
-      getDocs(collection(db, "pendingUsers")).catch(() => null),
-      getDocs(collection(db, "userInvites")).catch(() => null),
+      getDocs(collection(db, "users")).catch((err) => {
+        console.warn("[STAFF LIST] Warning reading users collection:", err);
+        return null;
+      }),
+      getDocs(collection(db, "pendingUsers")).catch((err) => {
+        console.warn("[STAFF LIST] Warning reading pendingUsers collection:", err);
+        return null;
+      }),
+      getDocs(collection(db, "userInvites")).catch((err) => {
+        console.warn("[STAFF LIST] Warning reading userInvites collection:", err);
+        return null;
+      }),
     ]);
 
-    const emailToRealUser = new Map<string, UserProfile>();
+    const emailMap = new Map<string, UserProfile>();
     const uidOnlyUsers: UserProfile[] = [];
 
+    // 1. Process documents from users collection
     if (usersSnap) {
       usersSnap.forEach((d) => {
-        const u = { ...d.data(), uid: d.id } as UserProfile;
-        const email = (u.email || '').toLowerCase().trim();
-        if (email) {
-          emailToRealUser.set(email, u);
-        } else {
-          uidOnlyUsers.push(u);
-        }
-      });
-    }
+        const data = d.data() as any;
+        const rawEmail = (data.email || (d.id.includes('@') ? d.id : '') || '').toLowerCase().trim();
+        const isRealUid = d.id !== rawEmail && !d.id.startsWith("pending_") && !d.id.startsWith("invite_");
 
-    const pendingMap = new Map<string, UserInvite>();
-    if (pendingSnap) {
-      pendingSnap.forEach((d) => {
-        const data = d.data() as UserInvite;
-        if (data?.email) {
-          pendingMap.set(data.email.toLowerCase().trim(), data);
-        }
-      });
-    }
-    if (invitesSnap) {
-      invitesSnap.forEach((d) => {
-        const data = d.data() as UserInvite;
-        if (data?.email) {
-          const email = data.email.toLowerCase().trim();
-          if (!pendingMap.has(email)) {
-            pendingMap.set(email, data);
+        const profile: UserProfile = {
+          uid: isRealUid ? d.id : (data.uid && data.uid !== 'pending' ? data.uid : 'pending'),
+          email: rawEmail || null,
+          displayName: data.displayName || data.name || (rawEmail ? rawEmail.split('@')[0] : 'Cán bộ'),
+          photoURL: data.photoURL || null,
+          role: data.role || 'manager',
+          status: data.status || 'active',
+          schoolId: data.schoolId || null,
+          schoolName: data.schoolName || null,
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt || new Date().toISOString(),
+          lastLoginAt: data.lastLoginAt || null,
+        };
+
+        if (rawEmail) {
+          const existing = emailMap.get(rawEmail);
+          // If we already have a record, prioritize real Firebase UID or newer document
+          if (!existing || isRealUid) {
+            emailMap.set(rawEmail, profile);
           }
+        } else {
+          uidOnlyUsers.push(profile);
         }
       });
     }
 
-    const resultMap = new Map<string, UserProfile>();
+    // 2. Process documents from pendingUsers & userInvites
+    const mergeInvites = (snap: any) => {
+      if (!snap) return;
+      snap.forEach((d: any) => {
+        const data = d.data() as UserInvite;
+        if (!data || !data.email) return;
+        const cleanEmail = data.email.toLowerCase().trim();
+        const existing = emailMap.get(cleanEmail);
 
-    // 1. Add all real registered users from users/{uid}
-    emailToRealUser.forEach((realUser, email) => {
-      // If there's a pending assignment that has newer details (e.g. Admin assigned a school while user hadn't logged in), show it
-      const pending = pendingMap.get(email);
-      if (pending && pending.schoolId && pending.schoolId !== realUser.schoolId) {
-        resultMap.set(email, {
-          ...realUser,
-          schoolId: pending.schoolId,
-          schoolName: pending.schoolName || realUser.schoolName,
-          role: pending.role || realUser.role,
-        });
-      } else {
-        resultMap.set(email, realUser);
-      }
-      // Remove from pending map so we don't duplicate
-      pendingMap.delete(email);
-    });
+        if (!existing) {
+          emailMap.set(cleanEmail, {
+            uid: data.uid || 'pending',
+            email: cleanEmail,
+            displayName: data.displayName || data.name || cleanEmail.split('@')[0],
+            photoURL: null,
+            role: data.role || 'manager',
+            status: data.status || 'active',
+            schoolId: data.schoolId || null,
+            schoolName: data.schoolName || null,
+            createdAt: data.createdAt || new Date().toISOString(),
+            updatedAt: data.updatedAt || new Date().toISOString(),
+            lastLoginAt: data.lastLoginAt || null,
+          });
+        } else if (data.schoolId && (!existing.schoolId || data.schoolId !== existing.schoolId)) {
+          // If invite has assigned school and existing user profile doesn't or is different
+          emailMap.set(cleanEmail, {
+            ...existing,
+            schoolId: data.schoolId,
+            schoolName: data.schoolName || existing.schoolName,
+            role: data.role || existing.role,
+            status: data.status || existing.status,
+          });
+        }
+      });
+    };
 
-    // 2. Add pending invitations for users who haven't logged in yet
-    pendingMap.forEach((pending, email) => {
-      if (!resultMap.has(email)) {
-        resultMap.set(email, {
-          uid: `pending_${getEmailKey(email)}`,
-          displayName: pending.displayName || pending.name || email.split('@')[0],
-          email: pending.email,
-          photoURL: null,
-          role: pending.role || 'manager',
-          status: pending.status || 'active',
-          schoolId: pending.schoolId || null,
-          schoolName: pending.schoolName || null,
-          createdAt: pending.createdAt || new Date().toISOString(),
-          updatedAt: pending.updatedAt || new Date().toISOString(),
-          lastLoginAt: null,
-        });
-      }
-    });
+    mergeInvites(pendingSnap);
+    mergeInvites(invitesSnap);
 
-    // 3. Add any UID-only users
+    // 3. Add UID-only users
     uidOnlyUsers.forEach((u) => {
-      if (!resultMap.has(u.uid)) {
-        resultMap.set(u.uid, u);
+      if (!emailMap.has(u.uid)) {
+        emailMap.set(u.uid, u);
       }
     });
 
-    return Array.from(resultMap.values()).sort((a, b) => 
+    const resultList = Array.from(emailMap.values()).sort((a, b) => 
       (b.createdAt || '').localeCompare(a.createdAt || '')
     );
+
+    console.log(`[STAFF LIST] Total users:\n${resultList.length}`);
+    return resultList;
   } catch (error) {
-    console.error("[USER PROFILE] Error fetching all user profiles:", error);
+    console.error("[STAFF LIST] Error fetching all user profiles:", error);
     return [];
   }
 }
 
 /**
  * Create user profile by Admin (Admin only)
- * Creates pending invitation in pendingUsers/{cleanEmail}.
- * If the user has already logged in with Google in the past, updates users/{uid} directly.
+ * Follows strict verified write:
+ * 1. Checks school existence
+ * 2. Checks if email already exists
+ * 3. Writes to users collection and pendingUsers collection
+ * 4. Verifies document exists with getDoc
+ * 5. Logs all required debug messages
  */
 export async function createUserProfileByAdmin(
   profile: Partial<UserProfile> & { email: string; role: UserRole; schoolId: string | null }
 ): Promise<boolean> {
-  try {
-    const cleanEmail = profile.email.trim().toLowerCase();
-    if (!cleanEmail) return false;
-    const now = new Date().toISOString();
+  const cleanEmail = (profile.email || '').trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    throw new Error('Email không hợp lệ.');
+  }
 
-    const pendingData: UserInvite = {
+  console.log(`[STAFF CREATE] Start`);
+  console.log(`[STAFF CREATE] Email:\n${cleanEmail}`);
+  console.log(`[STAFF CREATE] Selected schoolId:\n${profile.schoolId || 'none'}`);
+  console.log(`[STAFF CREATE] Role:\n${profile.role}`);
+  console.log(`[STAFF CREATE] Status:\n${profile.status || 'active'}`);
+
+  try {
+    let resolvedSchoolName = profile.schoolName || null;
+
+    // 1. Verify school existence if schoolId is specified
+    if (profile.schoolId && profile.schoolId.trim() !== '') {
+      const targetSchoolId = profile.schoolId.trim();
+      const schoolRef = doc(db, "schools", targetSchoolId);
+      const schoolSnap = await getDoc(schoolRef);
+
+      if (!schoolSnap.exists()) {
+        const errMsg = `Trường học với mã "${targetSchoolId}" không tồn tại trên hệ thống (schools/${targetSchoolId}). Không thể gán cán bộ vào trường này.`;
+        console.error(`[STAFF CREATE] ERROR: school_not_found\n[STAFF CREATE] ERROR MESSAGE: ${errMsg}`);
+        throw new Error(errMsg);
+      }
+
+      const sData = schoolSnap.data() as School;
+      resolvedSchoolName = sData.name || resolvedSchoolName || targetSchoolId;
+    } else if (profile.role === 'manager') {
+      const errMsg = 'Cán bộ Quản lý (manager) bắt buộc phải được gán vào 1 trường học cụ thể.';
+      console.error(`[STAFF CREATE] ERROR: missing_school_id\n[STAFF CREATE] ERROR MESSAGE: ${errMsg}`);
+      throw new Error(errMsg);
+    }
+
+    // 2. Check if a real Firebase UID already exists for this email
+    let firebaseUid = "pending";
+    let targetDocId = cleanEmail;
+
+    try {
+      const userDocSnap = await getDoc(doc(db, "users", cleanEmail));
+      if (userDocSnap.exists()) {
+        const existingData = userDocSnap.data() as any;
+        if (existingData?.uid && existingData.uid !== 'pending' && !existingData.uid.startsWith('pending_')) {
+          firebaseUid = existingData.uid;
+          targetDocId = existingData.uid;
+        }
+      }
+    } catch (_) {}
+
+    if (firebaseUid === "pending") {
+      try {
+        const q = query(collection(db, "users"), where("email", "==", cleanEmail));
+        const querySnap = await getDocs(q);
+        if (!querySnap.empty) {
+          for (const d of querySnap.docs) {
+            if (d.id !== cleanEmail && !d.id.startsWith("pending_")) {
+              firebaseUid = d.id;
+              targetDocId = d.id;
+              break;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    const firestorePath = `users/${targetDocId}`;
+    console.log(`[STAFF CREATE] Firebase UID:\n${firebaseUid}`);
+    console.log(`[STAFF CREATE] Firestore path:\n${firestorePath}`);
+
+    const now = new Date().toISOString();
+    const canonicalProfile: UserProfile = {
+      uid: firebaseUid,
       email: cleanEmail,
       displayName: profile.displayName || cleanEmail.split('@')[0],
       role: profile.role || 'manager',
       status: profile.status || 'active',
-      schoolId: profile.schoolId || null,
-      schoolName: profile.schoolName || null,
+      schoolId: profile.role === 'admin' ? (profile.schoolId || null) : (profile.schoolId ? profile.schoolId.trim() : null),
+      schoolName: profile.role === 'admin' ? (resolvedSchoolName || null) : resolvedSchoolName,
+      photoURL: profile.photoURL || null,
       createdAt: profile.createdAt || now,
       updatedAt: now,
+      lastLoginAt: null,
     };
 
-    // 1. Save to pendingUsers and userInvites
-    await createPendingUser(pendingData);
+    const pendingInviteData: UserInvite = {
+      email: cleanEmail,
+      displayName: canonicalProfile.displayName,
+      role: canonicalProfile.role,
+      status: canonicalProfile.status,
+      schoolId: canonicalProfile.schoolId,
+      schoolName: canonicalProfile.schoolName,
+      uid: firebaseUid === "pending" ? null : firebaseUid,
+      createdAt: canonicalProfile.createdAt || now,
+      updatedAt: now,
+      lastLoginAt: null,
+    };
 
-    // 2. If user already exists in users collection (by email query), update their real users/{uid} document immediately
-    try {
-      const q = query(collection(db, "users"), where("email", "==", cleanEmail));
-      const snap = await getDocs(q);
-      const updates: Promise<any>[] = [];
-      snap.forEach((d) => {
-        updates.push(setDoc(d.ref, {
-          displayName: pendingData.displayName,
-          role: pendingData.role,
-          status: pendingData.status,
-          schoolId: pendingData.schoolId,
-          schoolName: pendingData.schoolName,
-          updatedAt: now,
-        }, { merge: true }));
-      });
-      await Promise.all(updates);
-    } catch (_) {}
+    // 3. Write document to Firestore
+    console.log(`[STAFF CREATE] Writing document...`);
 
-    console.log(`[USER PROFILE] Successfully created pending user invitation:`, pendingData);
+    // Write to users collection
+    const targetUserRef = doc(db, "users", targetDocId);
+    await setDoc(targetUserRef, canonicalProfile, { merge: true });
+
+    // Also write to pendingUsers and userInvites for first-time Google sign-in sync
+    await setDoc(doc(db, "pendingUsers", cleanEmail), pendingInviteData, { merge: true });
+    await setDoc(doc(db, "userInvites", cleanEmail), pendingInviteData, { merge: true });
+
+    console.log(`[STAFF CREATE] Write completed`);
+
+    // 4. Verify document exists in Firestore (Point 2: Proof of write)
+    const verifySnap = await getDoc(targetUserRef);
+    const exists = verifySnap.exists();
+    console.log(`[STAFF CREATE] Verify document exists:\n${exists}`);
+
+    if (!exists) {
+      const verifyPending = await getDoc(doc(db, "pendingUsers", cleanEmail));
+      if (!verifyPending.exists()) {
+        throw new Error("Tạo cán bộ thất bại: Firestore không tồn tại document sau khi ghi");
+      }
+    }
+
+    console.log(`[STAFF CREATE] Saved data:\n${JSON.stringify({
+      email: cleanEmail,
+      schoolId: canonicalProfile.schoolId,
+      schoolName: canonicalProfile.schoolName,
+      role: canonicalProfile.role,
+      status: canonicalProfile.status,
+      displayName: canonicalProfile.displayName,
+    })}`);
+
     return true;
   } catch (error: any) {
-    console.error(`[USER PROFILE] Error creating user profile:`, error);
-    return false;
+    console.error(`[STAFF CREATE] ERROR:\n${error?.code || 'unknown'}`);
+    console.error(`[STAFF CREATE] ERROR MESSAGE:\n${error?.message || String(error)}`);
+    throw error;
   }
 }
 
@@ -1178,8 +1289,19 @@ export async function updateUserProfileByAdmin(
       }, { merge: true });
     }
 
-    // 3. Also update any user doc matching email
+    // 3. Also update document by email key if exists in users
     if (cleanEmail) {
+      try {
+        const emailDocRef = doc(db, "users", cleanEmail);
+        const emailDocSnap = await getDoc(emailDocRef);
+        if (emailDocSnap.exists()) {
+          await setDoc(emailDocRef, {
+            ...updates,
+            updatedAt: now,
+          }, { merge: true });
+        }
+      } catch (_) {}
+
       try {
         const q = query(collection(db, "users"), where("email", "==", cleanEmail));
         const snap = await getDocs(q);
@@ -1236,8 +1358,9 @@ export async function deleteUserProfileByAdmin(uid: string, email?: string | nul
       await deleteDoc(userDocRef).catch(() => {});
     }
 
-    // 3. Also delete any other doc in users collection matching email
+    // 3. Also delete document in users collection where docId == cleanEmail
     if (cleanEmail) {
+      await deleteDoc(doc(db, "users", cleanEmail)).catch(() => {});
       try {
         const q = query(collection(db, "users"), where("email", "==", cleanEmail));
         const snap = await getDocs(q);
