@@ -518,7 +518,14 @@ export async function getUserInviteByEmail(email: string): Promise<UserInvite | 
   return null;
 }
 
-export async function createUserInvite(data: UserInvite): Promise<boolean> {
+/**
+ * Pending Users & Invitations
+ * When Admin creates a user before they sign in for the first time with Google,
+ * the record is stored in pendingUsers/{cleanEmail} (and userInvites/{cleanEmail} for compatibility).
+ * When the user logs in for the first time with Google, syncUserProfile reads this invitation,
+ * creates users/{currentUser.uid}, and deletes/claims the pending invitation.
+ */
+export async function createPendingUser(data: UserInvite): Promise<boolean> {
   const cleanEmail = data.email.trim().toLowerCase();
   const key = getEmailKey(cleanEmail);
   const now = new Date().toISOString();
@@ -527,40 +534,48 @@ export async function createUserInvite(data: UserInvite): Promise<boolean> {
     email: cleanEmail,
     displayName: data.displayName || data.name || cleanEmail.split('@')[0],
     role: data.role || 'manager',
-    status: data.status || 'invited',
+    status: data.status || 'active',
     schoolId: data.schoolId || null,
     schoolName: data.schoolName || null,
-    uid: data.uid || null,
+    uid: null,
     createdAt: data.createdAt || now,
     updatedAt: now,
     lastLoginAt: data.lastLoginAt || null,
   };
 
   try {
-    // 1. Save to userInvites/{cleanEmail}
+    // 1. Save to pendingUsers/{cleanEmail}
+    await setDoc(doc(db, "pendingUsers", cleanEmail), payload, { merge: true });
+    if (key !== cleanEmail) {
+      await setDoc(doc(db, "pendingUsers", key), payload, { merge: true });
+    }
+
+    // 2. Save to userInvites & authorized_users for compatibility
     await setDoc(doc(db, "userInvites", cleanEmail), payload, { merge: true });
-    // 2. Save to userInvites/{key}
     if (key !== cleanEmail) {
       await setDoc(doc(db, "userInvites", key), payload, { merge: true });
     }
-    // 3. Save to authorized_users/{cleanEmail} for backwards compatibility
     await setDoc(doc(db, "authorized_users", cleanEmail), payload, { merge: true });
 
-    console.log(`[USER INVITE] Created invite for ${cleanEmail} (schoolId: ${payload.schoolId}, status: ${payload.status})`);
+    console.log(`[PENDING USER] Registered invitation for ${cleanEmail} (schoolId: ${payload.schoolId}, role: ${payload.role})`);
     return true;
   } catch (err) {
-    console.error("[USER INVITE] Error creating invite:", err);
+    console.error("[PENDING USER] Error creating invitation:", err);
     return false;
   }
 }
 
-export async function updateUserInvite(email: string, updates: Partial<UserInvite>): Promise<boolean> {
+export async function updatePendingUser(email: string, updates: Partial<UserInvite>): Promise<boolean> {
   const cleanEmail = email.trim().toLowerCase();
   const key = getEmailKey(cleanEmail);
   const now = new Date().toISOString();
   const payload = { ...updates, updatedAt: now };
 
   try {
+    await setDoc(doc(db, "pendingUsers", cleanEmail), payload, { merge: true });
+    if (key !== cleanEmail) {
+      await setDoc(doc(db, "pendingUsers", key), payload, { merge: true });
+    }
     await setDoc(doc(db, "userInvites", cleanEmail), payload, { merge: true });
     if (key !== cleanEmail) {
       await setDoc(doc(db, "userInvites", key), payload, { merge: true });
@@ -568,15 +583,19 @@ export async function updateUserInvite(email: string, updates: Partial<UserInvit
     await setDoc(doc(db, "authorized_users", cleanEmail), payload, { merge: true });
     return true;
   } catch (err) {
-    console.error("[USER INVITE] Error updating invite:", err);
+    console.error("[PENDING USER] Error updating invitation:", err);
     return false;
   }
 }
 
-export async function deleteUserInvite(email: string): Promise<boolean> {
+export async function deletePendingUser(email: string): Promise<boolean> {
   const cleanEmail = email.trim().toLowerCase();
   const key = getEmailKey(cleanEmail);
   try {
+    await deleteDoc(doc(db, "pendingUsers", cleanEmail)).catch(() => {});
+    if (key !== cleanEmail) {
+      await deleteDoc(doc(db, "pendingUsers", key)).catch(() => {});
+    }
     await deleteDoc(doc(db, "userInvites", cleanEmail)).catch(() => {});
     if (key !== cleanEmail) {
       await deleteDoc(doc(db, "userInvites", key)).catch(() => {});
@@ -584,22 +603,51 @@ export async function deleteUserInvite(email: string): Promise<boolean> {
     await deleteDoc(doc(db, "authorized_users", cleanEmail)).catch(() => {});
     return true;
   } catch (err) {
-    console.error("[USER INVITE] Error deleting invite:", err);
+    console.error("[PENDING USER] Error deleting invitation:", err);
     return false;
   }
 }
 
+// User Invites aliases
+export async function createUserInvite(data: UserInvite): Promise<boolean> {
+  return createPendingUser(data);
+}
+
+export async function updateUserInvite(email: string, updates: Partial<UserInvite>): Promise<boolean> {
+  return updatePendingUser(email, updates);
+}
+
+export async function deleteUserInvite(email: string): Promise<boolean> {
+  return deletePendingUser(email);
+}
+
 export async function getAllUserInvites(): Promise<UserInvite[]> {
   try {
-    const colRef = collection(db, "userInvites");
-    const snap = await getDocs(colRef);
+    const [pendingSnap, invitesSnap] = await Promise.all([
+      getDocs(collection(db, "pendingUsers")).catch(() => null),
+      getDocs(collection(db, "userInvites")).catch(() => null),
+    ]);
+
     const invitesMap = new Map<string, UserInvite>();
-    snap.forEach((d) => {
-      const data = d.data() as UserInvite;
-      if (data && data.email) {
-        invitesMap.set(data.email.toLowerCase().trim(), data);
-      }
-    });
+    if (pendingSnap) {
+      pendingSnap.forEach((d) => {
+        const data = d.data() as UserInvite;
+        if (data && data.email) {
+          invitesMap.set(data.email.toLowerCase().trim(), data);
+        }
+      });
+    }
+    if (invitesSnap) {
+      invitesSnap.forEach((d) => {
+        const data = d.data() as UserInvite;
+        if (data && data.email) {
+          const email = data.email.toLowerCase().trim();
+          if (!invitesMap.has(email)) {
+            invitesMap.set(email, data);
+          }
+        }
+      });
+    }
     return Array.from(invitesMap.values());
   } catch (err) {
     console.warn("[USER INVITE] Error reading userInvites collection:", err);
@@ -613,15 +661,15 @@ export async function getAuthorizedUserByEmail(email: string): Promise<Authorize
 }
 
 export async function createAuthorizedUser(data: AuthorizedUser): Promise<boolean> {
-  return createUserInvite(data as UserInvite);
+  return createPendingUser(data as UserInvite);
 }
 
 export async function updateAuthorizedUser(email: string, updates: Partial<AuthorizedUser>): Promise<boolean> {
-  return updateUserInvite(email, updates);
+  return updatePendingUser(email, updates);
 }
 
 export async function deleteAuthorizedUser(email: string): Promise<boolean> {
-  return deleteUserInvite(email);
+  return deletePendingUser(email);
 }
 
 export async function getAllAuthorizedUsers(): Promise<AuthorizedUser[]> {
@@ -637,7 +685,15 @@ export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise
   if (!cleanEmail) return null;
   const key = getEmailKey(cleanEmail);
 
-  // 1. Direct get userInvites/{cleanEmail} (Highest priority for pre-registered invites)
+  // 1. Direct get pendingUsers/{cleanEmail} (Highest priority for pre-registered invites)
+  try {
+    const pendingSnap1 = await getDoc(doc(db, "pendingUsers", cleanEmail));
+    if (pendingSnap1.exists()) {
+      return pendingSnap1.data() as UserInvite;
+    }
+  } catch (_) {}
+
+  // 2. Direct get userInvites/{cleanEmail}
   try {
     const inviteSnap1 = await getDoc(doc(db, "userInvites", cleanEmail));
     if (inviteSnap1.exists()) {
@@ -645,7 +701,17 @@ export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise
     }
   } catch (_) {}
 
-  // 2. Direct get userInvites/{key}
+  // 3. Direct get pendingUsers/{key}
+  if (key !== cleanEmail) {
+    try {
+      const pendingSnap2 = await getDoc(doc(db, "pendingUsers", key));
+      if (pendingSnap2.exists()) {
+        return pendingSnap2.data() as UserInvite;
+      }
+    } catch (_) {}
+  }
+
+  // 4. Direct get userInvites/{key}
   if (key !== cleanEmail) {
     try {
       const inviteSnap2 = await getDoc(doc(db, "userInvites", key));
@@ -654,43 +720,6 @@ export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise
       }
     } catch (_) {}
   }
-
-  // 3. Query users where email == cleanEmail (Find any pre-created user profile)
-  try {
-    const q1 = query(collection(db, "users"), where("email", "==", cleanEmail));
-    const snap1 = await getDocs(q1);
-    if (!snap1.empty) {
-      const d = snap1.docs[0].data() as any;
-      return {
-        email: cleanEmail,
-        displayName: d.displayName || d.name || cleanEmail.split('@')[0],
-        role: d.role || 'manager',
-        status: d.status || 'active',
-        schoolId: d.schoolId || null,
-        schoolName: d.schoolName || null,
-        createdAt: d.createdAt || new Date().toISOString(),
-        updatedAt: d.updatedAt || new Date().toISOString(),
-      };
-    }
-  } catch (_) {}
-
-  // 4. Direct get users/{cleanEmail}
-  try {
-    const userSnapClean = await getDoc(doc(db, "users", cleanEmail));
-    if (userSnapClean.exists()) {
-      const d = userSnapClean.data() as any;
-      return {
-        email: cleanEmail,
-        displayName: d.displayName || d.name || cleanEmail.split('@')[0],
-        role: d.role || 'manager',
-        status: d.status || 'invited',
-        schoolId: d.schoolId || null,
-        schoolName: d.schoolName || null,
-        createdAt: d.createdAt || new Date().toISOString(),
-        updatedAt: d.updatedAt || new Date().toISOString(),
-      };
-    }
-  } catch (_) {}
 
   // 5. Fallback: Direct get authorized_users/{cleanEmail}
   try {
@@ -710,13 +739,32 @@ export async function findPreRegisteredProfileByEmail(rawEmail: string): Promise
     }
   } catch (_) {}
 
+  // 6. Query users where email == cleanEmail (Find any pre-created user profile)
+  try {
+    const q1 = query(collection(db, "users"), where("email", "==", cleanEmail));
+    const snap1 = await getDocs(q1);
+    if (!snap1.empty) {
+      const d = snap1.docs[0].data() as any;
+      return {
+        email: cleanEmail,
+        displayName: d.displayName || d.name || cleanEmail.split('@')[0],
+        role: d.role || 'manager',
+        status: d.status || 'active',
+        schoolId: d.schoolId || null,
+        schoolName: d.schoolName || null,
+        createdAt: d.createdAt || new Date().toISOString(),
+        updatedAt: d.updatedAt || new Date().toISOString(),
+      };
+    }
+  } catch (_) {}
+
   return null;
 }
 
 /**
  * Sync or retrieve user profile in Firestore: users/{googleUid}
  * Luồng chuẩn:
- * Firebase Auth -> currentUser.uid -> users/{uid} -> role + schoolId + status -> schools/{schoolId}
+ * Firebase Auth -> currentUser.uid -> users/{currentUser.uid} -> userProfile -> schoolId -> schools/{schoolId}
  */
 export async function syncUserProfile(user: User): Promise<UserProfile | null> {
   const googleUid = user.uid;
@@ -755,123 +803,127 @@ export async function syncUserProfile(user: User): Promise<UserProfile | null> {
       return adminProfile;
     }
 
-    // 2. Direct read users/{googleUid}
+    // 2. Direct, exact read from Firestore: doc(db, "users", currentUser.uid)
     let existingProfile: UserProfile | null = null;
     try {
-      const userSnap = await getDoc(doc(db, "users", googleUid));
+      const userDocRef = doc(db, "users", googleUid);
+      const userSnap = await getDoc(userDocRef);
       if (userSnap.exists()) {
         existingProfile = { ...userSnap.data(), uid: googleUid } as UserProfile;
       }
     } catch (err) {
-      console.warn("[PROFILE LOOKUP] users/{uid} check:", err);
+      console.warn("[PROFILE LOOKUP] users/{uid} direct read check:", err);
     }
 
-    // 3. Search pre-registered invite / admin assignment by email
-    let inviteData: UserInvite | null = null;
+    // 3. Search pre-registered invite / admin assignment in pendingUsers by email
+    let pendingData: UserInvite | null = null;
     if (cleanEmail) {
-      inviteData = await findPreRegisteredProfileByEmail(rawEmail);
+      pendingData = await findPreRegisteredProfileByEmail(rawEmail);
     }
 
-    // 4. If neither existing profile nor invite exists -> Unauthorized
-    if (!existingProfile && !inviteData) {
-      console.warn(`[USER PROFILE] No authorized invite found for email: ${cleanEmail} (UID: ${googleUid})`);
-      console.log(`[PROFILE] schoolId: none`);
-      return null;
+    // 4. Case A: Profile document already exists in users/{googleUid}
+    if (existingProfile) {
+      // If Admin created/updated a pending assignment while user was offline
+      if (pendingData) {
+        existingProfile.role = pendingData.role || existingProfile.role;
+        existingProfile.status = pendingData.status === 'disabled' ? 'disabled' : (pendingData.status || existingProfile.status);
+        if (pendingData.schoolId !== undefined) {
+          existingProfile.schoolId = pendingData.schoolId ? pendingData.schoolId.trim() : null;
+          existingProfile.schoolName = pendingData.schoolName || existingProfile.schoolName;
+        }
+        existingProfile.displayName = user.displayName || pendingData.displayName || existingProfile.displayName;
+        existingProfile.updatedAt = now;
+        existingProfile.lastLoginAt = now;
+
+        try {
+          await setDoc(doc(db, "users", googleUid), existingProfile, { merge: true });
+          await deletePendingUser(cleanEmail);
+        } catch (_) {}
+      } else {
+        // Refresh login timestamp
+        try {
+          await setDoc(doc(db, "users", googleUid), {
+            lastLoginAt: now,
+            displayName: user.displayName || existingProfile.displayName,
+            photoURL: user.photoURL || existingProfile.photoURL,
+          }, { merge: true });
+        } catch (_) {}
+      }
+
+      console.log(`[PROFILE] schoolId: ${existingProfile.schoolId || 'none'}`);
+      return existingProfile;
     }
 
-    // 5. If account is explicitly disabled by Admin
-    const isExplicitlyDisabled = 
-      (inviteData && inviteData.status === 'disabled') ||
-      (!inviteData && existingProfile && existingProfile.status === 'disabled');
-
-    if (isExplicitlyDisabled) {
-      const disabledProfile: UserProfile = {
+    // 5. Case B: First-time Google login with pre-registered invitation in pendingUsers
+    if (pendingData) {
+      const isExplicitlyDisabled = pendingData.status === 'disabled';
+      const userProfile: UserProfile = {
         uid: googleUid,
-        displayName: user.displayName || inviteData?.displayName || existingProfile?.displayName || cleanEmail.split('@')[0],
+        displayName: user.displayName || pendingData.displayName || cleanEmail.split('@')[0] || "Cán bộ quản lý",
         email: cleanEmail,
         photoURL: user.photoURL || null,
-        role: inviteData?.role || existingProfile?.role || 'manager',
-        status: 'disabled',
-        schoolId: inviteData?.schoolId || existingProfile?.schoolId || null,
-        schoolName: inviteData?.schoolName || existingProfile?.schoolName || null,
-        createdAt: inviteData?.createdAt || existingProfile?.createdAt || now,
+        role: pendingData.role || 'manager',
+        status: isExplicitlyDisabled ? 'disabled' : 'active',
+        schoolId: pendingData.schoolId ? pendingData.schoolId.trim() : null,
+        schoolName: pendingData.schoolName || null,
+        createdAt: pendingData.createdAt || now,
         updatedAt: now,
         lastLoginAt: now,
       };
 
       try {
-        await setDoc(doc(db, "users", googleUid), disabledProfile, { merge: true });
-      } catch (_) {}
+        await setDoc(doc(db, "users", googleUid), userProfile, { merge: true });
+        // Clean up pending invitation as it is now claimed into users/{googleUid}
+        await deletePendingUser(cleanEmail);
+      } catch (writeErr) {
+        console.warn("[USER PROFILE] Write users/{uid} error:", writeErr);
+      }
 
-      console.log(`[PROFILE] schoolId: ${disabledProfile.schoolId || 'none'}`);
-      return disabledProfile;
+      console.log(`[PROFILE] schoolId: ${userProfile.schoolId || 'none'}`);
+      return userProfile;
     }
 
-    // 6. Resolve final schoolId, role, status:
-    // Priority:
-    // a) If inviteData has a specific schoolId assigned by Admin, use it.
-    // b) Else if existingProfile has a schoolId, retain it.
-    // c) If neither is assigned, schoolId is null (NEVER fallback to school_001 or any default).
-    const finalRole: UserRole = inviteData?.role || existingProfile?.role || 'manager';
-    
-    let finalSchoolId: string | null = null;
-    let finalSchoolName: string | null = null;
-
-    if (inviteData?.schoolId && inviteData.schoolId.trim()) {
-      finalSchoolId = inviteData.schoolId.trim();
-      finalSchoolName = inviteData.schoolName || null;
-    } else if (existingProfile?.schoolId && existingProfile.schoolId.trim()) {
-      finalSchoolId = existingProfile.schoolId.trim();
-      finalSchoolName = existingProfile.schoolName || null;
-    }
-
-    const finalDisplayName = user.displayName || inviteData?.displayName || inviteData?.name || existingProfile?.displayName || cleanEmail.split('@')[0] || "Cán bộ quản lý";
-    const finalCreatedAt = inviteData?.createdAt || existingProfile?.createdAt || now;
-
-    const userProfile: UserProfile = {
-      uid: googleUid,
-      displayName: finalDisplayName,
-      email: cleanEmail,
-      photoURL: user.photoURL || existingProfile?.photoURL || null,
-      role: finalRole,
-      status: 'active',
-      schoolId: finalSchoolId,
-      schoolName: finalSchoolName,
-      createdAt: finalCreatedAt,
-      updatedAt: now,
-      lastLoginAt: now,
-    };
-
-    // Save canonical profile to users/{googleUid}
-    try {
-      await setDoc(doc(db, "users", googleUid), userProfile, { merge: true });
-    } catch (writeErr) {
-      console.warn("[USER PROFILE] Write users/{uid} error:", writeErr);
-    }
-
-    // Synchronize invite / authorized_users to active with UID and finalSchoolId
+    // 6. Case C: Legacy user migration (in case document was stored under another key matching email)
     if (cleanEmail) {
-      const linkUpdate = {
-        status: 'active' as UserStatus,
-        uid: googleUid,
-        schoolId: finalSchoolId,
-        schoolName: finalSchoolName,
-        lastLoginAt: now,
-        updatedAt: now,
-      };
       try {
-        await setDoc(doc(db, "userInvites", cleanEmail), linkUpdate, { merge: true });
-        const key = getEmailKey(cleanEmail);
-        if (key !== cleanEmail) {
-          await setDoc(doc(db, "userInvites", key), linkUpdate, { merge: true });
+        const q = query(collection(db, "users"), where("email", "==", cleanEmail));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const oldDoc = snap.docs[0];
+          const oldData = oldDoc.data() as any;
+          const isExplicitlyDisabled = oldData.status === 'disabled';
+
+          const migratedProfile: UserProfile = {
+            uid: googleUid,
+            displayName: user.displayName || oldData.displayName || cleanEmail.split('@')[0] || "Cán bộ quản lý",
+            email: cleanEmail,
+            photoURL: user.photoURL || oldData.photoURL || null,
+            role: oldData.role || 'manager',
+            status: isExplicitlyDisabled ? 'disabled' : 'active',
+            schoolId: oldData.schoolId ? oldData.schoolId.trim() : null,
+            schoolName: oldData.schoolName || null,
+            createdAt: oldData.createdAt || now,
+            updatedAt: now,
+            lastLoginAt: now,
+          };
+
+          try {
+            await setDoc(doc(db, "users", googleUid), migratedProfile, { merge: true });
+            if (oldDoc.id !== googleUid) {
+              await deleteDoc(doc(db, "users", oldDoc.id)).catch(() => {});
+            }
+          } catch (_) {}
+
+          console.log(`[PROFILE] schoolId: ${migratedProfile.schoolId || 'none'}`);
+          return migratedProfile;
         }
-        await setDoc(doc(db, "authorized_users", cleanEmail), linkUpdate, { merge: true });
       } catch (_) {}
     }
 
-    console.log(`[PROFILE] schoolId: ${finalSchoolId || 'none'}`);
-
-    return userProfile;
+    // 7. Case D: Unauthorized (No existing profile in users/{uid} and no pending invitation)
+    console.warn(`[USER PROFILE] No authorized invite found for email: ${cleanEmail} (UID: ${googleUid})`);
+    console.log(`[PROFILE] schoolId: none`);
+    return null;
   } catch (error: any) {
     console.error("[USER PROFILE] Error syncing profile:", error);
     return null;
@@ -897,117 +949,99 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 
 /**
  * Get all user profiles (Admin only)
- * Deduplicates by Firebase Auth UID and email, ensuring canonical users/{uid} is primary.
+ * Aggregates real users from users/{uid} and pending invitations from pendingUsers.
  */
 export async function getAllUserProfiles(): Promise<UserProfile[]> {
   try {
-    const [usersSnap, invites] = await Promise.all([
-      getDocs(query(collection(db, "users"), orderBy("createdAt", "desc"))).catch(() => null),
-      getAllUserInvites().catch(() => []),
+    const [usersSnap, pendingSnap, invitesSnap] = await Promise.all([
+      getDocs(collection(db, "users")).catch(() => null),
+      getDocs(collection(db, "pendingUsers")).catch(() => null),
+      getDocs(collection(db, "userInvites")).catch(() => null),
     ]);
 
-    const emailToProfiles = new Map<string, UserProfile[]>();
-    const uidMap = new Map<string, UserProfile>();
+    const emailToRealUser = new Map<string, UserProfile>();
+    const uidOnlyUsers: UserProfile[] = [];
 
     if (usersSnap) {
       usersSnap.forEach((d) => {
         const u = { ...d.data(), uid: d.id } as UserProfile;
         const email = (u.email || '').toLowerCase().trim();
         if (email) {
-          const list = emailToProfiles.get(email) || [];
-          list.push(u);
-          emailToProfiles.set(email, list);
+          emailToRealUser.set(email, u);
         } else {
-          uidMap.set(u.uid, u);
+          uidOnlyUsers.push(u);
         }
       });
     }
 
-    const mergedUsersMap = new Map<string, UserProfile>();
-
-    emailToProfiles.forEach((profileList, email) => {
-      // Find the real Firebase Auth UID doc (alphanumeric, length >= 20, doesn't start with user_ or invite_)
-      const realAuthDoc = profileList.find(
-        (p) => p.uid.length >= 20 && !p.uid.startsWith("user_") && !p.uid.startsWith("invite_") && !p.uid.startsWith("auth_")
-      );
-      
-      let canonical: UserProfile = realAuthDoc || profileList[0];
-
-      // If multiple docs exist for this email, prioritize any doc with a valid schoolId
-      const assignedSchoolDoc = profileList.find((p) => p.schoolId && p.schoolId.trim());
-      if (assignedSchoolDoc && canonical.schoolId !== assignedSchoolDoc.schoolId) {
-        canonical = {
-          ...canonical,
-          schoolId: assignedSchoolDoc.schoolId,
-          schoolName: assignedSchoolDoc.schoolName || canonical.schoolName,
-          role: assignedSchoolDoc.role || canonical.role,
-        };
-        // Auto heal in Firestore
-        if (canonical.uid && !canonical.uid.startsWith("user_") && !canonical.uid.startsWith("invite_")) {
-          setDoc(doc(db, "users", canonical.uid), {
-            schoolId: canonical.schoolId,
-            schoolName: canonical.schoolName,
-            role: canonical.role,
-            updatedAt: new Date().toISOString(),
-          }, { merge: true }).catch(() => {});
+    const pendingMap = new Map<string, UserInvite>();
+    if (pendingSnap) {
+      pendingSnap.forEach((d) => {
+        const data = d.data() as UserInvite;
+        if (data?.email) {
+          pendingMap.set(data.email.toLowerCase().trim(), data);
         }
-      }
-
-      // Special target profile for hongbichtram13@gmail.com
-      if (email === 'hongbichtram13@gmail.com') {
-        canonical = {
-          ...canonical,
-          uid: 'k5k9h9DfSOYvcZVxhCNkC3kHL3w2',
-          email: 'hongbichtram13@gmail.com',
-          role: 'manager',
-          schoolId: canonical.schoolId || 'school_002',
-          schoolName: canonical.schoolName || 'Trường Tiểu học Nguyễn Du',
-          status: 'active',
-        };
-      }
-
-      mergedUsersMap.set(email, canonical);
-    });
-
-    // Merge invites
-    for (const inv of invites) {
-      const email = (inv.email || '').toLowerCase().trim();
-      if (!email) continue;
-      const existing = mergedUsersMap.get(email);
-      if (existing) {
-        if (inv.schoolId && inv.schoolId !== existing.schoolId) {
-          mergedUsersMap.set(email, {
-            ...existing,
-            schoolId: inv.schoolId,
-            schoolName: inv.schoolName || existing.schoolName,
-            role: inv.role || existing.role,
-          });
+      });
+    }
+    if (invitesSnap) {
+      invitesSnap.forEach((d) => {
+        const data = d.data() as UserInvite;
+        if (data?.email) {
+          const email = data.email.toLowerCase().trim();
+          if (!pendingMap.has(email)) {
+            pendingMap.set(email, data);
+          }
         }
-      } else {
-        mergedUsersMap.set(email, {
-          uid: `invite_${getEmailKey(email)}`,
-          displayName: inv.displayName,
-          email: inv.email,
-          photoURL: null,
-          role: inv.role,
-          status: inv.status || 'invited',
-          schoolId: inv.schoolId,
-          schoolName: inv.schoolName || null,
-          createdAt: inv.createdAt,
-          updatedAt: inv.updatedAt,
-          lastLoginAt: inv.lastLoginAt || null,
-        });
-      }
+      });
     }
 
-    // Add remaining UID-only profiles
-    uidMap.forEach((u, uid) => {
-      if (!mergedUsersMap.has(uid)) {
-        mergedUsersMap.set(uid, u);
+    const resultMap = new Map<string, UserProfile>();
+
+    // 1. Add all real registered users from users/{uid}
+    emailToRealUser.forEach((realUser, email) => {
+      // If there's a pending assignment that has newer details (e.g. Admin assigned a school while user hadn't logged in), show it
+      const pending = pendingMap.get(email);
+      if (pending && pending.schoolId && pending.schoolId !== realUser.schoolId) {
+        resultMap.set(email, {
+          ...realUser,
+          schoolId: pending.schoolId,
+          schoolName: pending.schoolName || realUser.schoolName,
+          role: pending.role || realUser.role,
+        });
+      } else {
+        resultMap.set(email, realUser);
+      }
+      // Remove from pending map so we don't duplicate
+      pendingMap.delete(email);
+    });
+
+    // 2. Add pending invitations for users who haven't logged in yet
+    pendingMap.forEach((pending, email) => {
+      if (!resultMap.has(email)) {
+        resultMap.set(email, {
+          uid: `pending_${getEmailKey(email)}`,
+          displayName: pending.displayName || pending.name || email.split('@')[0],
+          email: pending.email,
+          photoURL: null,
+          role: pending.role || 'manager',
+          status: pending.status || 'active',
+          schoolId: pending.schoolId || null,
+          schoolName: pending.schoolName || null,
+          createdAt: pending.createdAt || new Date().toISOString(),
+          updatedAt: pending.updatedAt || new Date().toISOString(),
+          lastLoginAt: null,
+        });
       }
     });
 
-    return Array.from(mergedUsersMap.values()).sort((a, b) => 
+    // 3. Add any UID-only users
+    uidOnlyUsers.forEach((u) => {
+      if (!resultMap.has(u.uid)) {
+        resultMap.set(u.uid, u);
+      }
+    });
+
+    return Array.from(resultMap.values()).sort((a, b) => 
       (b.createdAt || '').localeCompare(a.createdAt || '')
     );
   } catch (error) {
@@ -1018,62 +1052,50 @@ export async function getAllUserProfiles(): Promise<UserProfile[]> {
 
 /**
  * Create user profile by Admin (Admin only)
- * Stores in userInvites, authorized_users, and users collection
+ * Creates pending invitation in pendingUsers/{cleanEmail}.
+ * If the user has already logged in with Google in the past, updates users/{uid} directly.
  */
 export async function createUserProfileByAdmin(
-  profile: UserProfile
+  profile: Partial<UserProfile> & { email: string; role: UserRole; schoolId: string | null }
 ): Promise<boolean> {
   try {
-    const cleanEmail = profile.email ? profile.email.trim().toLowerCase() : '';
+    const cleanEmail = profile.email.trim().toLowerCase();
+    if (!cleanEmail) return false;
     const now = new Date().toISOString();
 
-    // 1. Save to userInvites & authorized_users
-    if (cleanEmail) {
-      await createUserInvite({
-        email: cleanEmail,
-        displayName: profile.displayName || cleanEmail.split('@')[0],
-        role: profile.role || 'manager',
-        status: profile.status || 'invited',
-        schoolId: profile.schoolId || null,
-        schoolName: profile.schoolName || null,
-        createdAt: profile.createdAt || now,
-        updatedAt: now,
-      });
-    }
-
-    // 2. Also save to users/{uid}
-    const userDocRef = doc(db, "users", profile.uid);
-    const data: UserProfile = {
-      ...profile,
-      email: cleanEmail || profile.email,
+    const pendingData: UserInvite = {
+      email: cleanEmail,
+      displayName: profile.displayName || cleanEmail.split('@')[0],
+      role: profile.role || 'manager',
+      status: profile.status || 'active',
+      schoolId: profile.schoolId || null,
+      schoolName: profile.schoolName || null,
       createdAt: profile.createdAt || now,
       updatedAt: now,
     };
-    await setDoc(userDocRef, data, { merge: true });
 
-    // 3. If email exists, ensure any existing doc in users matching this email is also updated
-    if (cleanEmail) {
-      try {
-        const q = query(collection(db, "users"), where("email", "==", cleanEmail));
-        const snap = await getDocs(q);
-        const promises: Promise<any>[] = [];
-        snap.forEach((d) => {
-          if (d.id !== profile.uid) {
-            promises.push(setDoc(d.ref, {
-              role: profile.role || 'manager',
-              status: profile.status || 'invited',
-              schoolId: profile.schoolId || null,
-              schoolName: profile.schoolName || null,
-              displayName: profile.displayName || cleanEmail.split('@')[0],
-              updatedAt: now,
-            }, { merge: true }));
-          }
-        });
-        await Promise.all(promises);
-      } catch (_) {}
-    }
+    // 1. Save to pendingUsers and userInvites
+    await createPendingUser(pendingData);
 
-    console.log(`[USER PROFILE] Successfully created user profile:`, data);
+    // 2. If user already exists in users collection (by email query), update their real users/{uid} document immediately
+    try {
+      const q = query(collection(db, "users"), where("email", "==", cleanEmail));
+      const snap = await getDocs(q);
+      const updates: Promise<any>[] = [];
+      snap.forEach((d) => {
+        updates.push(setDoc(d.ref, {
+          displayName: pendingData.displayName,
+          role: pendingData.role,
+          status: pendingData.status,
+          schoolId: pendingData.schoolId,
+          schoolName: pendingData.schoolName,
+          updatedAt: now,
+        }, { merge: true }));
+      });
+      await Promise.all(updates);
+    } catch (_) {}
+
+    console.log(`[USER PROFILE] Successfully created pending user invitation:`, pendingData);
     return true;
   } catch (error: any) {
     console.error(`[USER PROFILE] Error creating user profile:`, error);
@@ -1090,12 +1112,12 @@ export async function updateUserProfileByAdmin(
 ): Promise<boolean> {
   try {
     const now = new Date().toISOString();
-    const userDocRef = doc(db, "users", uid);
-    
     let targetEmail = updates.email;
-    if (!targetEmail) {
+
+    // If uid is a real Firebase UID, read document if email not provided
+    if (!targetEmail && !uid.startsWith("pending_") && !uid.startsWith("invite_")) {
       try {
-        const snap = await getDoc(userDocRef);
+        const snap = await getDoc(doc(db, "users", uid));
         if (snap.exists()) {
           targetEmail = snap.data()?.email;
         }
@@ -1104,9 +1126,9 @@ export async function updateUserProfileByAdmin(
 
     const cleanEmail = targetEmail ? targetEmail.trim().toLowerCase() : '';
 
-    // 1. Update userInvites and authorized_users
+    // 1. Update pendingUsers and userInvites if cleanEmail is known
     if (cleanEmail) {
-      await updateUserInvite(cleanEmail, {
+      await updatePendingUser(cleanEmail, {
         ...(updates.role ? { role: updates.role } : {}),
         ...(updates.status ? { status: updates.status } : {}),
         ...(updates.schoolId !== undefined ? { schoolId: updates.schoolId } : {}),
@@ -1115,16 +1137,16 @@ export async function updateUserProfileByAdmin(
       });
     }
 
-    // 2. Update users/{uid} directly
-    const updateData = {
-      ...updates,
-      updatedAt: now,
-    };
-    if (!uid.startsWith("auth_") && !uid.startsWith("invite_")) {
-      await setDoc(userDocRef, updateData, { merge: true });
+    // 2. If uid is a real Firebase UID, update users/{uid} directly
+    if (!uid.startsWith("pending_") && !uid.startsWith("invite_") && !uid.startsWith("auth_")) {
+      const userDocRef = doc(db, "users", uid);
+      await setDoc(userDocRef, {
+        ...updates,
+        updatedAt: now,
+      }, { merge: true });
     }
 
-    // 3. IMPORTANT: Also query any user docs matching email to update their schoolId & role
+    // 3. Also update any user doc matching email
     if (cleanEmail) {
       try {
         const q = query(collection(db, "users"), where("email", "==", cleanEmail));
@@ -1160,10 +1182,9 @@ export async function updateUserProfileByAdmin(
 export async function deleteUserProfileByAdmin(uid: string, email?: string | null): Promise<boolean> {
   try {
     let targetEmail = email;
-    if (!targetEmail) {
+    if (!targetEmail && !uid.startsWith("pending_") && !uid.startsWith("invite_")) {
       try {
-        const userDocRef = doc(db, "users", uid);
-        const snap = await getDoc(userDocRef);
+        const snap = await getDoc(doc(db, "users", uid));
         if (snap.exists()) {
           targetEmail = snap.data()?.email;
         }
@@ -1172,25 +1193,25 @@ export async function deleteUserProfileByAdmin(uid: string, email?: string | nul
 
     const cleanEmail = targetEmail ? targetEmail.trim().toLowerCase() : '';
 
-    // Delete from userInvites and authorized_users
+    // 1. Delete from pendingUsers, userInvites, authorized_users
     if (cleanEmail) {
-      await deleteUserInvite(cleanEmail);
+      await deletePendingUser(cleanEmail);
     }
 
-    // Delete from users collection
-    if (!uid.startsWith("auth_") && !uid.startsWith("invite_")) {
+    // 2. Delete from users collection if real UID
+    if (!uid.startsWith("pending_") && !uid.startsWith("invite_")) {
       const userDocRef = doc(db, "users", uid);
-      await deleteDoc(userDocRef);
+      await deleteDoc(userDocRef).catch(() => {});
     }
 
-    // Also delete any other doc in users collection matching email
+    // 3. Also delete any other doc in users collection matching email
     if (cleanEmail) {
       try {
         const q = query(collection(db, "users"), where("email", "==", cleanEmail));
         const snap = await getDocs(q);
         const promises: Promise<any>[] = [];
         snap.forEach((d) => {
-          promises.push(deleteDoc(d.ref));
+          promises.push(deleteDoc(d.ref).catch(() => {}));
         });
         await Promise.all(promises);
       } catch (_) {}
@@ -1199,7 +1220,7 @@ export async function deleteUserProfileByAdmin(uid: string, email?: string | nul
     console.log(`[USER PROFILE] Successfully deleted user ${uid} / ${cleanEmail}`);
     return true;
   } catch (error: any) {
-    console.error(`[USER PROFILE] Error deleting user profile ${uid}:`, error);
+    console.error(`[USER PROFILE] Error deleting user ${uid}:`, error);
     return false;
   }
 }

@@ -64,7 +64,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [newEmail, setNewEmail] = useState<string>('');
   const [newName, setNewName] = useState<string>('');
-  const [newUid, setNewUid] = useState<string>('');
   const [newRole, setNewRole] = useState<UserRole>('manager');
   const [newSchoolId, setNewSchoolId] = useState<string>('');
 
@@ -241,31 +240,22 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     setModalError(null);
     try {
       const selectedSchool = schools.find((s) => s.id === assignedSchoolId);
-      const generatedUid = newUid.trim() ? newUid.trim() : `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const now = new Date().toISOString();
 
-      // ALWAYS status: 'active'
-      const newProfile: UserProfile = {
-        uid: generatedUid,
+      const success = await createUserProfileByAdmin({
         email: cleanEmail,
         displayName: newName.trim() || cleanEmail.split('@')[0],
-        photoURL: null,
         role: newRole,
         status: 'active',
         schoolId: newRole === 'admin' ? (assignedSchoolId || null) : assignedSchoolId,
         schoolName: selectedSchool ? selectedSchool.name : (assignedSchoolId || null),
-        createdAt: now,
-        updatedAt: now,
-      };
+      });
 
-      const success = await createUserProfileByAdmin(newProfile);
       if (success) {
         const targetSchoolLabel = selectedSchool ? selectedSchool.name : 'toàn hệ thống';
         showToast('success', `✓ Tạo tài khoản thành công! Cán bộ đã được cấp quyền truy cập ${targetSchoolLabel} (🟢 Đang hoạt động).`);
         setIsAddModalOpen(false);
         setNewEmail('');
         setNewName('');
-        setNewUid('');
         await loadData();
       } else {
         setModalError('Lỗi khi thêm tài khoản vào Firestore. Vui lòng kiểm tra quyền Admin.');
@@ -530,7 +520,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                               <span>{user.email || 'N/A'}</span>
                             </div>
                             <div className="text-[10px] text-slate-400 font-mono truncate">
-                              UID: <span className="font-semibold text-slate-600">{user.uid}</span>
+                              UID: {user.uid.startsWith('pending_') || user.uid.startsWith('invite_') ? (
+                                <span className="font-medium text-amber-600 italic">Chờ đăng nhập (tự động nhận UID)</span>
+                              ) : (
+                                <span className="font-semibold text-slate-600">{user.uid}</span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -690,7 +684,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 {editingUser.displayName || editingUser.email}
               </p>
               <p className="text-[10px] text-slate-400 font-mono truncate">
-                Document: <span className="font-bold text-slate-700">users/{editingUser.uid}</span>
+                Định danh: {editingUser.uid.startsWith('pending_') || editingUser.uid.startsWith('invite_') ? (
+                  <span className="font-bold text-amber-700">pendingUsers/{editingUser.email}</span>
+                ) : (
+                  <span className="font-bold text-slate-700">users/{editingUser.uid}</span>
+                )}
               </p>
             </div>
 
@@ -859,20 +857,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   placeholder="Thầy/Cô Nguyễn Văn A"
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                 />
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-bold text-slate-700">Firebase Auth UID (Tùy chọn):</label>
-                <input
-                  type="text"
-                  value={newUid}
-                  onChange={(e) => setNewUid(e.target.value)}
-                  placeholder="Ví dụ: k5k9h9DfSOYvcZVxhCNkC3kHL3w2 (hoặc để trống)"
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 font-mono text-[11px] focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                />
-                <p className="text-[10px] text-slate-400">
-                  Nếu cán bộ đã đăng nhập trước đó, nhập UID để ghi thẳng vào users/{"{UID}"}. Nếu để trống, hệ thống sẽ tự động liên kết khi cán bộ đăng nhập.
-                </p>
               </div>
 
               <div className="space-y-1">

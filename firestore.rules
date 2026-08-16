@@ -37,7 +37,25 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.schoolId == schoolId;
     }
 
-    // 1. User Invites Collection: userInvites/{emailKey}
+    // 1. Pending Users & User Invites Collection: pendingUsers/{emailKey} & userInvites/{emailKey}
+    match /pendingUsers/{emailKey} {
+      allow read, write: if isSystemAdmin();
+
+      allow get: if isAuthenticated() && request.auth.token.email != null && (
+        emailKey == request.auth.token.email.lower() ||
+        emailKey == request.auth.token.email ||
+        (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
+      );
+
+      allow update, delete: if isAuthenticated() && request.auth.token.email != null && (
+        emailKey == request.auth.token.email.lower() ||
+        emailKey == request.auth.token.email ||
+        (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
+      );
+
+      allow list: if isSystemAdmin();
+    }
+
     match /userInvites/{emailKey} {
       // System Admin has full permissions (create, read, update, delete)
       allow read, write: if isSystemAdmin();
@@ -50,7 +68,7 @@ service cloud.firestore {
       );
 
       // Authenticated user can update their invite to link their Google UID upon first login
-      allow update: if isAuthenticated() && request.auth.token.email != null && (
+      allow update, delete: if isAuthenticated() && request.auth.token.email != null && (
         emailKey == request.auth.token.email.lower() ||
         emailKey == request.auth.token.email ||
         (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower())
